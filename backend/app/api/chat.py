@@ -6,6 +6,7 @@ from app.api.dependencies import CurrentUser, get_current_user, get_session_depe
 from app.schemas.chat import ChatMessageResponse, ChatThreadCreate, ChatThreadResponse
 from app.services.chat_threads import (
     create_thread,
+    delete_thread,
     get_thread,
     list_messages,
     list_threads,
@@ -54,3 +55,16 @@ async def get_thread_messages(
 
     messages = await list_messages(session, current_user.id, thread.id)
     return [ChatMessageResponse.model_validate(message) for message in messages]
+
+
+@router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_thread_endpoint(
+    thread_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session_dependency),
+) -> None:
+    deleted = await delete_thread(session, current_user.id, thread_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
+        )

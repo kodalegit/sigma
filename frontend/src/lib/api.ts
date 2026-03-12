@@ -67,6 +67,17 @@ export async function deleteDocument(documentId: string): Promise<void> {
   }
 }
 
+export async function deleteThread(threadId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/chat/threads/${threadId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Delete failed: ${response.status}`);
+  }
+}
+
 export async function streamChat(
   threadId: string,
   message: string,
@@ -87,6 +98,20 @@ export async function streamChat(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  function emitChunk(chunk: string) {
+    const data = chunk
+      .split("\n")
+      .filter((entry) => entry.startsWith("data:"))
+      .map((entry) => entry.slice(5).trimStart())
+      .join("\n");
+
+    if (!data) {
+      return;
+    }
+
+    onEvent(JSON.parse(data) as StreamEvent);
+  }
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
@@ -98,13 +123,12 @@ export async function streamChat(
     buffer = parts.pop() ?? "";
 
     for (const part of parts) {
-      const line = part
-        .split("\n")
-        .find((entry) => entry.startsWith("data: "));
-      if (!line) {
-        continue;
-      }
-      onEvent(JSON.parse(line.slice(6)) as StreamEvent);
+      emitChunk(part);
     }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    emitChunk(buffer);
   }
 }

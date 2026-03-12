@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import ChatMessage, ChatThread
@@ -33,6 +33,18 @@ async def get_thread(
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def delete_thread(session: AsyncSession, user_id: UUID, thread_id: UUID) -> bool:
+    stmt = (
+        delete(ChatThread)
+        .where(ChatThread.id == thread_id, ChatThread.user_id == user_id)
+        .returning(ChatThread.id)
+    )
+    result = await session.execute(stmt)
+    deleted_id = result.scalar_one_or_none()
+    await session.commit()
+    return deleted_id is not None
 
 
 async def list_messages(

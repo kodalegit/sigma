@@ -54,7 +54,7 @@ async def stream_chat(
             )
             if generated_title and generated_title != thread.title:
                 await update_thread_title(session, thread, generated_title)
-                yield _sse_payload(TitleEvent(title=thread.title).to_dict())
+                yield _sse_payload(TitleEvent(title=generated_title).to_dict())
 
         async for event in agent_service.stream(
             session=session,

@@ -1,16 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
-import { AlertTriangle, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Check, FileText, Loader2, Plus, Send, Trash2, Upload, X } from "lucide-react";
 
 import {
   AlertDialog,
@@ -27,9 +25,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { AssistantEventPanels, EmptyState, SigmaMark, SourcesPopover } from "@/components/chat-components";
+import { MarkdownMessage } from "@/components/markdown-message";
 import {
   createThread,
   deleteDocument,
+  deleteThread,
   listDocuments,
   listMessages,
   listThreads,
@@ -37,101 +38,29 @@ import {
   uploadDocument,
 } from "@/lib/api";
 import type {
+  ChatEventRecord,
   ChatMessageRecord,
-  Citation,
   DocumentRecord,
   StreamEvent,
   ThreadRecord,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const citationPattern = /\[(\d+)\]/g;
-
-function linkifyCitations(content: string): string {
-  return content.replace(citationPattern, (_, marker: string) => {
-    return `[${marker}](citation://${marker})`;
-  });
-}
-
-function CitationBadge({ citation }: { citation: Citation }) {
-  return (
-    <Badge className="gap-1 rounded-full border-[#d5e4f4] bg-[#eef6ff] text-[#2663a8]">
-      {citation.title}
-      {citation.page ? ` · p.${citation.page}` : ""}
-    </Badge>
-  );
-}
-
-function MarkdownMessage({ content, citations }: { content: string; citations: Citation[] }) {
-  const citationMap = useMemo(() => {
-    return new Map(citations.map((citation) => [citation.marker, citation]));
-  }, [citations]);
-
-  return (
-    <div className="prose max-w-none text-[#324255] prose-p:my-2 prose-headings:text-[#152235] prose-strong:text-[#152235] prose-li:marker:text-[#5d6b80] prose-code:text-[#1f8fff] prose-a:text-[#1f8fff]">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children }: { href?: string; children?: ReactNode }) => {
-            if (href?.startsWith("citation://")) {
-              const marker = Number(href.replace("citation://", ""));
-              const citation = citationMap.get(marker);
-              if (!citation) {
-                return <span className="rounded-md bg-[#eef6ff] px-1.5 py-0.5 text-xs text-[#2663a8]">[{marker}]</span>;
-              }
-              return (
-                <span
-                  className="mx-0.5 inline-flex cursor-default rounded-md bg-[#eef6ff] px-1.5 py-0.5 text-xs font-medium text-[#2663a8]"
-                  title={`${citation.title}${citation.page ? ` page ${citation.page}` : ""}\n\n${citation.excerpt}`}
-                >
-                  [{marker}]
-                </span>
-              );
-            }
-
-            return (
-              <a href={href} target="_blank" rel="noreferrer" className="text-[#1f8fff] underline">
-                {children}
-              </a>
-            );
-          },
-        }}
-      >
-        {linkifyCitations(content)}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function SigmaMark() {
-  return (
-    <div className="flex items-center gap-2 text-[#2a5ca8]">
-      <span className="text-lg leading-none">✦</span>
-      <span className="text-2xl font-semibold tracking-tight">sigma</span>
-    </div>
-  );
-}
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <Card className="border-dashed border-[#dbe4ef] bg-[#fbfcfe] shadow-none">
-      <CardContent className="p-5">
-        <p className="text-sm font-semibold text-[#213040]">{title}</p>
-        <p className="mt-1 text-sm leading-6 text-[#6b7a90]">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function HoroApp() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const selectedThreadId = searchParams.get("thread");
   const [message, setMessage] = useState("");
-  const [streamingMessage, setStreamingMessage] = useState("");
-  const [streamingCitations, setStreamingCitations] = useState<Citation[]>([]);
-  const [toolEvents, setToolEvents] = useState<string[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(selectedThreadId);
+  const [streamingAssistantMessageId, setStreamingAssistantMessageId] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<{ id: string; name: string } | null>(null);
+  const [openDeleteThreadId, setOpenDeleteThreadId] = useState<string | null>(null);
+  const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
 
   const threadsQuery = useQuery({
     queryKey: ["threads"],
@@ -141,25 +70,25 @@ export function HoroApp() {
   const documentsQuery = useQuery({
     queryKey: ["documents"],
     queryFn: listDocuments,
+    refetchInterval: (query) => {
+      const data = query.state.data as DocumentRecord[] | undefined;
+      const hasProcessing = data?.some((d) => d.status !== "ready") ?? false;
+      return hasProcessing ? 2000 : false;
+    },
   });
 
   const messagesQuery = useQuery({
-    queryKey: ["messages", selectedThreadId],
-    queryFn: () => listMessages(selectedThreadId as string),
-    enabled: Boolean(selectedThreadId),
-  });
-
-  const createThreadMutation = useMutation({
-    mutationFn: createThread,
-    onSuccess: async (thread: ThreadRecord) => {
-      await queryClient.invalidateQueries({ queryKey: ["threads"] });
-      setSelectedThreadId(thread.id);
-    },
+    queryKey: ["messages", activeThreadId],
+    queryFn: () => listMessages(activeThreadId as string),
+    enabled: Boolean(activeThreadId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const uploadMutation = useMutation({
     mutationFn: uploadDocument,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      setAttachedFile({ id: result.document.id, name: result.document.title });
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
   });
@@ -171,77 +100,219 @@ export function HoroApp() {
     },
   });
 
+  const deleteThreadMutation = useMutation({
+    mutationFn: deleteThread,
+    onSuccess: async (_, deletedThreadId) => {
+      queryClient.setQueryData<ThreadRecord[]>(["threads"], (current = []) =>
+        current.filter((thread) => thread.id !== deletedThreadId),
+      );
+      queryClient.removeQueries({ queryKey: ["messages", deletedThreadId] });
+      await queryClient.invalidateQueries({ queryKey: ["threads"] });
+      if (activeThreadId === deletedThreadId) {
+        setActiveThreadId(null);
+        router.push("/");
+      }
+      setOpenDeleteThreadId(null);
+      setDeletingThreadId(null);
+    },
+    onError: () => {
+      setDeletingThreadId(null);
+    },
+  });
+
   const threadItems = threadsQuery.data ?? [];
   const documentItems = documentsQuery.data ?? [];
-  const messageItems = messagesQuery.data ?? [];
+  const messageItems = activeThreadId ? (messagesQuery.data ?? []) : [];
 
-  const activeThread = threadItems.find((thread: ThreadRecord) => thread.id === selectedThreadId) ?? null;
+  const attachedDocStatus = attachedFile
+    ? documentItems.find((d) => d.id === attachedFile.id)?.status ?? "processing"
+    : null;
+  const isFileProcessing = uploadMutation.isPending || (attachedFile !== null && attachedDocStatus !== "ready");
+  const isSendDisabled = isStreaming || isFileProcessing;
+
+  const activeThread = threadItems.find((thread: ThreadRecord) => thread.id === activeThreadId) ?? null;
+  const lastMessage = messageItems.length ? messageItems[messageItems.length - 1] : null;
+
+  useEffect(() => {
+    setActiveThreadId(selectedThreadId);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [activeThreadId, messageItems.length, lastMessage?.id, lastMessage?.content, lastMessage?.citations.length, lastMessage?.metadata?.events?.length]);
+
+  const clearAttachedFile = useCallback(() => {
+    setAttachedFile(null);
+  }, []);
+
+  function appendMessagesToThread(threadId: string, messages: ChatMessageRecord[]) {
+    queryClient.setQueryData<ChatMessageRecord[]>(["messages", threadId], (current = []) => [
+      ...current,
+      ...messages,
+    ]);
+  }
+
+  function updateThreadMessage(
+    threadId: string,
+    messageId: string,
+    updater: (message: ChatMessageRecord) => ChatMessageRecord,
+  ) {
+    queryClient.setQueryData<ChatMessageRecord[]>(["messages", threadId], (current = []) =>
+      current.map((entry) => (entry.id === messageId ? updater(entry) : entry)),
+    );
+  }
+
+  function appendAssistantEvent(threadId: string, messageId: string, event: ChatEventRecord) {
+    updateThreadMessage(threadId, messageId, (current) => ({
+      ...current,
+      metadata: {
+        ...current.metadata,
+        events: [...(current.metadata?.events ?? []), event],
+      },
+    }));
+  }
+
+  function removeThreadMessage(threadId: string, messageId: string) {
+    queryClient.setQueryData<ChatMessageRecord[]>(["messages", threadId], (current = []) =>
+      current.filter((entry) => entry.id !== messageId),
+    );
+  }
 
   async function ensureThread(): Promise<string> {
-    if (selectedThreadId) {
-      return selectedThreadId;
+    if (activeThreadId) {
+      return activeThreadId;
     }
-    const thread = await createThreadMutation.mutateAsync("New chat");
+
+    const thread = await createThread("New chat");
+    queryClient.setQueryData<ThreadRecord[]>(["threads"], (current = []) => [
+      thread,
+      ...current.filter((item) => item.id !== thread.id),
+    ]);
+    queryClient.setQueryData<ChatMessageRecord[]>(["messages", thread.id], (current) => current ?? []);
+    setActiveThreadId(thread.id);
+    router.push(`?thread=${thread.id}`);
     return thread.id;
+  }
+
+  function handleNewChat() {
+    setActiveThreadId(null);
+    router.push("/");
+  }
+
+  function handleSelectThread(threadId: string) {
+    setActiveThreadId(threadId);
+    router.push(`?thread=${threadId}`);
+  }
+
+  async function handleDeleteThread(threadId: string) {
+    setDeletingThreadId(threadId);
+    await deleteThreadMutation.mutateAsync(threadId);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!message.trim()) {
+    const nextMessage = message;
+    if (!nextMessage.trim() || isSendDisabled) {
       return;
     }
 
-    const threadId = await ensureThread();
-    const nextMessage = message;
-    setMessage("");
-    setStreamingMessage("");
-    setStreamingCitations([]);
-    setToolEvents([]);
     setStreamError(null);
     setIsStreaming(true);
-
-    const optimisticUserMessage: ChatMessageRecord = {
-      id: `optimistic-${Date.now()}`,
-      thread_id: threadId,
-      role: "user",
-      content: nextMessage,
-      citations: [],
-      created_at: new Date().toISOString(),
-    };
-
-    queryClient.setQueryData<ChatMessageRecord[]>(["messages", threadId], (current = []) => [
-      ...current,
-      optimisticUserMessage,
-    ]);
+    let threadId: string | null = null;
+    let assistantMessageId: string | null = null;
 
     try {
+      threadId = await ensureThread();
+      assistantMessageId = `optimistic-assistant-${Date.now()}`;
+      const createdAt = new Date().toISOString();
+      await queryClient.cancelQueries({ queryKey: ["messages", threadId] });
+      const optimisticUserMessage: ChatMessageRecord = {
+        id: `optimistic-user-${Date.now()}`,
+        thread_id: threadId,
+        role: "user",
+        content: nextMessage,
+        citations: [],
+        metadata: {},
+        created_at: createdAt,
+      };
+      const optimisticAssistantMessage: ChatMessageRecord = {
+        id: assistantMessageId,
+        thread_id: threadId,
+        role: "assistant",
+        content: "",
+        citations: [],
+        metadata: { events: [] },
+        created_at: createdAt,
+      };
+
+      setMessage("");
+      setAttachedFile(null);
+      setStreamingAssistantMessageId(assistantMessageId);
+      appendMessagesToThread(threadId, [optimisticUserMessage, optimisticAssistantMessage]);
+
       await streamChat(threadId, nextMessage, (event: StreamEvent) => {
+        const stableThreadId = threadId;
+        const stableAssistantMessageId = assistantMessageId;
+
+        if (!stableThreadId || !stableAssistantMessageId) {
+          return;
+        }
+
+        if (event.type === "title") {
+          queryClient.setQueryData<ThreadRecord[]>(["threads"], (current = []) =>
+            current.map((thread) =>
+              thread.id === stableThreadId ? { ...thread, title: event.title } : thread,
+            ),
+          );
+          return;
+        }
+
         if (event.type === "token") {
-          setStreamingMessage((current) => current + event.delta);
+          updateThreadMessage(stableThreadId, stableAssistantMessageId, (current) => ({
+            ...current,
+            content: current.content + event.delta,
+          }));
+        } else if (event.type === "reasoning") {
+          appendAssistantEvent(stableThreadId, stableAssistantMessageId, event);
         } else if (event.type === "citation") {
-          setStreamingCitations((current) => {
-            if (current.some((item) => item.marker === event.marker)) {
-              return current;
-            }
-            return [...current, event];
-          });
+          appendAssistantEvent(stableThreadId, stableAssistantMessageId, event);
+          updateThreadMessage(stableThreadId, stableAssistantMessageId, (current) => ({
+            ...current,
+            citations: current.citations.some((item) => item.marker === event.marker)
+              ? current.citations
+              : [...current.citations, event],
+          }));
         } else if (event.type === "tool_start") {
-          setToolEvents((current) => [...current, `Searching documents for ${JSON.stringify(event.input ?? {})}`]);
+          appendAssistantEvent(stableThreadId, stableAssistantMessageId, event);
         } else if (event.type === "tool_end") {
-          setToolEvents((current) => [...current, event.summary]);
+          appendAssistantEvent(stableThreadId, stableAssistantMessageId, event);
         } else if (event.type === "done") {
-          setStreamingMessage(event.content);
-          setStreamingCitations(event.citations);
+          updateThreadMessage(stableThreadId, stableAssistantMessageId, (current) => ({
+            ...current,
+            content: event.content,
+            citations: event.citations,
+          }));
         } else if (event.type === "error") {
           setStreamError(event.message);
+          const assistantMessage = queryClient
+            .getQueryData<ChatMessageRecord[]>(["messages", stableThreadId])
+            ?.find((entry) => entry.id === stableAssistantMessageId);
+          if (!assistantMessage?.content.trim()) {
+            removeThreadMessage(stableThreadId, stableAssistantMessageId);
+          }
+          void queryClient.invalidateQueries({ queryKey: ["messages", stableThreadId] });
         }
       });
-      await queryClient.invalidateQueries({ queryKey: ["messages", threadId] });
+
       await queryClient.invalidateQueries({ queryKey: ["threads"] });
     } catch (error) {
       setStreamError(error instanceof Error ? error.message : "Failed to stream response.");
+      if (threadId) {
+        await queryClient.invalidateQueries({ queryKey: ["messages", threadId] });
+      }
     } finally {
       setIsStreaming(false);
+      setStreamingAssistantMessageId(null);
     }
   }
 
@@ -250,15 +321,29 @@ export function HoroApp() {
     if (!file) {
       return;
     }
-    await uploadMutation.mutateAsync(file);
     event.target.value = "";
+    await uploadMutation.mutateAsync(file);
+  }
+
+  async function handleRemoveAttachedFile() {
+    if (attachedFile) {
+      await deleteMutation.mutateAsync(attachedFile.id);
+    }
+    clearAttachedFile();
+  }
+
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSubmit(event as unknown as React.FormEvent<HTMLFormElement>);
+    }
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb] text-[#152235]">
-      <div className="grid min-h-screen grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <aside className="border-r border-[#e2e8f0] bg-[#f8fafc]">
-          <div className="flex h-full flex-col px-5 py-6">
+    <div className="h-screen overflow-hidden bg-[#f5f7fb] text-[#152235]">
+      <div className="grid h-screen grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="flex h-full flex-col overflow-hidden border-r border-[#e2e8f0] bg-[#f8fafc]">
+          <div className="flex flex-col px-5 py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <SigmaMark />
@@ -269,114 +354,159 @@ export function HoroApp() {
               <p className="text-sm font-semibold text-[#213040]">Chat with Horo</p>
               <p className="mt-1 text-sm text-[#7b8ba1]">The Co-Pilot for your business</p>
             </div>
+          </div>
 
-            <div className="mt-8 flex-1 space-y-6 overflow-y-auto pr-1">
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Documents</p>
-                  <Badge>{documentItems.length}</Badge>
-                </div>
-                <label className="group flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-dashed border-[#c8d5e4] bg-white p-4 transition hover:border-[#1f8fff] hover:bg-[#f8fbff]">
-                  <input type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleUpload} />
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef6ff] text-[#1f8fff] transition group-hover:scale-105 group-hover:bg-[#1f8fff] group-hover:text-white">
-                    {uploadMutation.isPending ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    ) : (
-                      <Upload className="h-5 w-5" />
-                    )}
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-[#213040]">
-                      {uploadMutation.isPending ? "Uploading..." : "Upload document"}
-                    </p>
-                    <p className="mt-0.5 text-xs text-[#7b8ba1]">PDF, TXT, or MD files supported</p>
-                  </div>
-                </label>
-                {uploadMutation.isError ? <p className="text-sm text-red-500">{String(uploadMutation.error)}</p> : null}
-                {deleteMutation.isError ? <p className="text-sm text-red-500">{String(deleteMutation.error)}</p> : null}
-                <div className="space-y-2">
-                  {documentItems.length ? (
-                    documentItems.map((document: DocumentRecord) => (
-                      <Card key={document.id} className="bg-white">
-                        <CardContent className="flex items-start justify-between gap-3 p-3.5">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-[#213040]">{document.title}</p>
-                            <p className="mt-1 text-xs text-[#7b8ba1]">{document.mime_type || "document"}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={cn(document.status === "ready" ? "border-[#cbe6d6] bg-[#edf9f1] text-[#2b7a4b]" : "")}>{document.status}</Badge>
-                            <AlertDialog>
-                              <AlertDialogTrigger className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[#7b8ba1] transition hover:bg-[#fee2e2] hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600/50">
-                                <Trash2 className="h-4 w-4" />
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <div className="flex items-center gap-2">
-                                    <AlertTriangle className="h-5 w-5 text-red-600" />
-                                    <AlertDialogTitle>Delete document?</AlertDialogTitle>
-                                  </div>
-                                  <AlertDialogDescription>
-                                    This will permanently delete &quot;{document.title}&quot; and all its indexed chunks. This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteMutation.mutate(document.id)}
-                                    className="bg-red-600 hover:bg-red-700 text-white"
-                                  >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
+          <div className="flex-1 space-y-6 overflow-y-auto px-5 pb-6">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Documents</p>
+                <Badge>{documentItems.length}</Badge>
+              </div>
+              <label className="group flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-dashed border-[#c8d5e4] bg-white p-4 transition hover:border-[#1f8fff] hover:bg-[#f8fbff]">
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleUpload} />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef6ff] text-[#1f8fff] transition group-hover:scale-105 group-hover:bg-[#1f8fff] group-hover:text-white">
+                  {uploadMutation.isPending ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   ) : (
-                    <EmptyState title="No documents yet" description="Upload your first source and Horo will ground answers with citations." />
+                    <Upload className="h-5 w-5" />
                   )}
                 </div>
-              </section>
-
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Threads</p>
-                  <Button size="sm" variant="outline" onClick={() => createThreadMutation.mutate("New chat")}>
-                    New
-                  </Button>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-[#213040]">
+                    {uploadMutation.isPending ? "Processing..." : "Upload document"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[#7b8ba1]">PDF, TXT, or MD files. Documents must finish processing before chat.</p>
                 </div>
-                <div className="space-y-2">
-                  {threadItems.length ? (
-                    threadItems.map((thread: ThreadRecord) => (
+              </label>
+              {uploadMutation.isError ? <p className="text-sm text-red-500">{String(uploadMutation.error)}</p> : null}
+              {deleteMutation.isError ? <p className="text-sm text-red-500">{String(deleteMutation.error)}</p> : null}
+              <div className="space-y-2">
+                {documentItems.length ? (
+                  documentItems.map((document: DocumentRecord) => (
+                    <Card key={document.id} className="bg-white">
+                      <CardContent className="flex items-start justify-between gap-3 p-3.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-[#213040]">{document.title}</p>
+                          <p className="mt-1 text-xs text-[#7b8ba1]">{document.mime_type || "document"}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn(document.status === "ready" ? "border-[#cbe6d6] bg-[#edf9f1] text-[#2b7a4b]" : "")}>{document.status}</Badge>
+                          <AlertDialog>
+                            <AlertDialogTrigger className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[#7b8ba1] transition hover:bg-[#fee2e2] hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600/50">
+                              <Trash2 className="h-4 w-4" />
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                                  <AlertDialogTitle>Delete document?</AlertDialogTitle>
+                                </div>
+                                <AlertDialogDescription>
+                                  This will permanently delete &quot;{document.title}&quot; and all its indexed chunks. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(document.id)}
+                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <EmptyState title="No documents yet" description="Upload your first source and Horo will ground answers with citations." />
+                )}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Threads</p>
+                <Button size="sm" variant="outline" onClick={handleNewChat}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {threadItems.length ? (
+                  threadItems.map((thread: ThreadRecord) => (
+                    <div
+                      key={thread.id}
+                      className={cn(
+                        "flex items-center justify-between rounded-2xl border px-4 py-3 transition",
+                        activeThreadId === thread.id
+                          ? "border-[#bfdbfe] bg-[#eef6ff] shadow-sm"
+                          : "border-[#dbe4ef] bg-white hover:border-[#c4d4e7] hover:bg-[#fbfcfe]",
+                      )}
+                    >
                       <button
-                        key={thread.id}
                         type="button"
-                        onClick={() => setSelectedThreadId(thread.id)}
-                        className={cn(
-                          "w-full rounded-2xl border px-4 py-3 text-left transition",
-                          selectedThreadId === thread.id
-                            ? "border-[#bfdbfe] bg-[#eef6ff] shadow-sm"
-                            : "border-[#dbe4ef] bg-white hover:border-[#c4d4e7] hover:bg-[#fbfcfe]",
-                        )}
+                        onClick={() => handleSelectThread(thread.id)}
+                        className="min-w-0 flex-1 cursor-pointer text-left"
                       >
                         <p className="truncate text-sm font-medium text-[#213040]">{thread.title}</p>
                         <p className="mt-1 text-xs text-[#7b8ba1]">{new Date(thread.updated_at).toLocaleString()}</p>
                       </button>
-                    ))
-                  ) : (
-                    <EmptyState title="No threads yet" description="Create a thread to start a founder conversation with Horo." />
-                  )}
-                </div>
-              </section>
-            </div>
+                      <AlertDialog
+                        open={openDeleteThreadId === thread.id}
+                        onOpenChange={(open) => {
+                          if (deletingThreadId === thread.id) {
+                            return;
+                          }
+                          setOpenDeleteThreadId(open ? thread.id : null);
+                        }}
+                      >
+                        <AlertDialogTrigger className="ml-2 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[#7b8ba1] transition hover:bg-[#fee2e2] hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600/50">
+                          <Trash2 className="h-4 w-4" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle className="h-5 w-5 text-red-600" />
+                              <AlertDialogTitle>Delete thread?</AlertDialogTitle>
+                            </div>
+                            <AlertDialogDescription>
+                              This will permanently delete &quot;{thread.title}&quot; and all its messages. This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={deletingThreadId === thread.id}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => void handleDeleteThread(thread.id)}
+                              disabled={deletingThreadId === thread.id}
+                              className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              {deletingThreadId === thread.id ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Deleting...
+                                </>
+                              ) : (
+                                "Delete"
+                              )}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState title="No threads yet" description="Create a thread to start a founder conversation with Horo." />
+                )}
+              </div>
+            </section>
           </div>
         </aside>
 
-        <main className="flex min-h-screen flex-col bg-[#f5f7fb]">
-          <div className="flex flex-1 flex-col px-4 py-5 sm:px-6 xl:px-10 mt-4">
-            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
+        <main className="flex h-full flex-col overflow-hidden bg-[#f5f7fb]">
+          <div className="flex flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 xl:px-10">
+            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-hidden">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Horo Workspace</p>
@@ -386,7 +516,7 @@ export function HoroApp() {
               </div>
 
               <div className="flex-1 space-y-5 overflow-y-auto pb-6">
-                {!messageItems.length && !streamingMessage ? (
+                {!messageItems.length ? (
                   <Card className="bg-white">
                     <CardContent className="p-6 text-center">
                       <p className="text-sm font-medium text-[#213040]">Start a conversation with Horo</p>
@@ -411,19 +541,23 @@ export function HoroApp() {
                           {entry.role === "assistant" ? "AI" : "You"}
                         </div>
                       </div>
-                      <Card className={cn(entry.role === "assistant" ? "bg-white" : "border-[#cfe2ff] bg-[#eef6ff]")}>
+                      <Card className={cn(entry.role === "assistant" ? "bg-white" : "border-[#cfe2ff] bg-[#eef6ff]") }>
                         <CardContent className="p-5">
+                          {entry.role === "assistant" ? <AssistantEventPanels events={entry.metadata?.events ?? []} /> : null}
                           {entry.role === "assistant" ? (
-                            <MarkdownMessage content={entry.content} citations={entry.citations} />
+                            <MarkdownMessage
+                              content={
+                                entry.id === streamingAssistantMessageId && isStreaming && !entry.content.trim()
+                                  ? "Thinking..."
+                                  : entry.content
+                              }
+                              citations={entry.citations}
+                            />
                           ) : (
                             <p className="whitespace-pre-wrap text-sm leading-7 text-[#213040]">{entry.content}</p>
                           )}
-                          {entry.citations.length ? (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {entry.citations.map((citation) => (
-                                <CitationBadge key={`${entry.id}-${citation.marker}`} citation={citation} />
-                              ))}
-                            </div>
+                          {entry.role === "assistant" && !(isStreaming && entry.id === streamingAssistantMessageId) ? (
+                            <SourcesPopover citations={entry.citations} />
                           ) : null}
                         </CardContent>
                       </Card>
@@ -431,65 +565,82 @@ export function HoroApp() {
                   </div>
                 ))}
 
-                {isStreaming || streamingMessage ? (
-                  <div className="flex w-full justify-start">
-                    <div className="w-full max-w-3xl">
-                      <div className="mb-2 flex items-center gap-2 text-xs text-[#8b9ab0]">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#dbe4ef] bg-white text-[11px] font-semibold text-[#64748b]">AI</div>
-                      </div>
-                      <Card className="bg-white">
-                        <CardContent className="p-5">
-                          <MarkdownMessage content={streamingMessage || "Thinking..."} citations={streamingCitations} />
-                          {streamingCitations.length ? (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {streamingCitations.map((citation) => (
-                                <CitationBadge key={`stream-${citation.marker}`} citation={citation} />
-                              ))}
-                            </div>
-                          ) : null}
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </div>
-                ) : null}
-
-                {toolEvents.length ? (
-                  <Card className="max-w-3xl bg-[#fbfcfe]">
-                    <CardContent className="p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">tool activity</p>
-                      <div className="mt-3 space-y-2 text-sm text-[#516074]">
-                        {toolEvents.map((item, index) => (
-                          <p key={`${item}-${index}`}>{item}</p>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : null}
-
                 {streamError ? <p className="text-sm text-red-500">{streamError}</p> : null}
+                <div ref={messagesEndRef} />
               </div>
 
               <Card className="sticky bottom-0 mt-auto border-[#bfd8f7] shadow-[0_16px_50px_rgba(63,94,139,0.08)]">
                 <CardContent className="p-3">
                   <form className="space-y-3" onSubmit={handleSubmit}>
+                    {attachedFile ? (
+                      <div className="flex items-center justify-between rounded-xl border border-[#dbe4ef] bg-[#f8fbff] px-3 py-2 text-sm">
+                        <div className="flex min-w-0 items-center gap-2 text-[#516074]">
+                          {uploadMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#1f8fff]" />
+                          ) : attachedDocStatus === "ready" ? (
+                            <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+                          ) : (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" />
+                          )}
+                          <FileText className="h-4 w-4 shrink-0 text-[#64748b]" />
+                          <span className="truncate font-medium">{attachedFile.name}</span>
+                          <span className="shrink-0 text-xs text-[#8b9ab0]">
+                            {uploadMutation.isPending
+                              ? "Uploading…"
+                              : attachedDocStatus === "ready"
+                                ? "Ready"
+                                : "Processing…"}
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 rounded-lg text-[#7b8ba1] hover:bg-red-50 hover:text-red-600"
+                          onClick={() => void handleRemoveAttachedFile()}
+                          disabled={deleteMutation.isPending || uploadMutation.isPending}
+                        >
+                          {deleteMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <X className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    ) : null}
                     <Textarea
                       value={message}
                       onChange={(event) => setMessage(event.target.value)}
-                      placeholder="Ask Horo about terms, clauses, onboarding steps, CAC, or anything in your uploaded documents..."
+                      onKeyDown={handleComposerKeyDown}
+                      placeholder="Ask Horo about your uploaded documents..."
                       className="min-h-28 resize-none border-0 bg-transparent p-3 shadow-none focus:ring-0"
+                      disabled={isStreaming}
                     />
                     <div className="flex items-center justify-between gap-4 border-t border-[#e8eef5] px-2 pt-3">
-                      <div className="flex items-center gap-2 text-sm text-[#7b8ba1]">
-                        <Button size="icon" variant="ghost" className="rounded-xl text-[#64748b]">+</Button>
-                        <span>Chat with Horo</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="rounded-xl">▷</Button>
-                        <Button type="submit" disabled={isStreaming || !message.trim()} className="rounded-xl px-5">
-                          {isStreaming ? "Streaming..." : "Send"}
-                        </Button>
-                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="rounded-xl text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1f8fff]"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadMutation.isPending || isFileProcessing}
+                      >
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={isSendDisabled || !message.trim()}
+                        className="rounded-xl px-4"
+                        size="icon"
+                      >
+                        {isStreaming ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
+                    <p className="px-2 text-xs text-[#8b9ab0]">Press Enter to send. Press Shift + Enter for a new line.</p>
                   </form>
                 </CardContent>
               </Card>
@@ -497,8 +648,8 @@ export function HoroApp() {
           </div>
         </main>
 
-        <aside className="hidden border-l border-[#e2e8f0] bg-[#f7f9fc] xl:block">
-          <div className="flex h-full flex-col p-5">
+        <aside className="hidden h-full flex-col overflow-hidden border-l border-[#e2e8f0] bg-[#f7f9fc] xl:flex">
+          <div className="flex h-full flex-col overflow-y-auto p-5">
             <div className="mt-6 space-y-4">
               <Card className="bg-white">
                 <CardContent className="p-4">

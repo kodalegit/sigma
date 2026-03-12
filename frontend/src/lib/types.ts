@@ -16,12 +16,22 @@ export type ThreadRecord = {
   updated_at: string;
 };
 
+export type ChatEventRecord =
+  | { type: "title"; title: string }
+  | { type: "reasoning"; content: string }
+  | { type: "tool_start"; tool: string; tool_call_id: string; input?: Record<string, unknown> }
+  | { type: "tool_end"; tool: string; tool_call_id: string; summary: string }
+  | { type: "citation"; marker: number; doc_id: string; title: string; excerpt: string; chunk_id: string; page?: number | null; category?: string };
+
 export type ChatMessageRecord = {
   id: string;
   thread_id: string;
   role: "user" | "assistant";
   content: string;
   citations: Citation[];
+  metadata?: {
+    events?: ChatEventRecord[];
+  };
   created_at: string;
 };
 
@@ -36,6 +46,8 @@ export type Citation = {
 };
 
 export type StreamEvent =
+  | { type: "title"; title: string }
+  | { type: "reasoning"; content: string }
   | { type: "token"; delta: string }
   | { type: "tool_start"; tool: string; tool_call_id: string; input?: Record<string, unknown> }
   | { type: "tool_end"; tool: string; tool_call_id: string; summary: string }

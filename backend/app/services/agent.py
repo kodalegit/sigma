@@ -149,8 +149,6 @@ class HoroAgentService:
                     if metadata.get("langgraph_node") != "model":
                         continue
                     token_text = getattr(token, "text", None)
-                    if callable(token_text):
-                        token_text = token_text()
                     if not isinstance(token_text, str) or not token_text:
                         token_text = getattr(token, "content", "") or ""
                     if token_text:
