@@ -27,8 +27,18 @@ class TitleGenerationService:
                 [
                     SystemMessage(
                         content=(
-                            "Generate a concise chat thread title from the user's first message. "
-                            "Use 3 to 7 words. Do not use quotes, punctuation at the end, or prefixes."
+                            "You create brief, clear titles that summarize a conversation's opening user message.\n\n"
+                            "Context: The chat is about a founder's private documents (pitch decks, policies, handbooks, finance sheets).\n"
+                            "Answers should cite those documents; if info is missing, the assistant says it doesn't know and asks for the right file.\n\n"
+                            "Guidelines:\n"
+                            "- Use 3 to 7 words\n"
+                            "- Capture the core task or question\n"
+                            "- Keep wording simple and relevant\n"
+                            "- Output ONLY the title, nothing else\n\n"
+                            "Examples:\n"
+                            "- 'Show me sales data' -> 'Sales Data Overview'\n"
+                            "- 'How many users signed up last week?' -> 'Weekly User Signups'\n"
+                            "- 'What is the total revenue?' -> 'Total Revenue Query'"
                         )
                     ),
                     HumanMessage(content=message.strip()),
@@ -52,7 +62,7 @@ class TitleGenerationService:
         title = " ".join(str(content).strip().replace("\n", " ").split())
         if not title:
             return fallback
-        title = title.strip('"\' ')
+        title = title.strip("\"' ")
         if len(title) > 72:
             title = title[:72].rstrip()
         return title or fallback

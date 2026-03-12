@@ -429,7 +429,7 @@ export function HoroApp() {
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Threads</p>
-                <Button size="sm" variant="outline" onClick={handleNewChat}>
+                <Button size="sm" variant="outline" onClick={handleNewChat} className="cursor-pointer">
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
