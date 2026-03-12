@@ -11,6 +11,12 @@ async def init_db() -> None:
         await connection.run_sync(Base.metadata.create_all)
         await connection.execute(
             text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT '{}'::json"
+            )
+        )
+        await connection.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_document_chunks_embedding_hnsw "
                 "ON document_chunks USING hnsw (embedding vector_cosine_ops) "
                 "WITH (m = 16, ef_construction = 64)"

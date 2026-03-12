@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from langchain.agents import create_agent
@@ -15,6 +16,7 @@ from app.services.stream_events import (
     CitationEvent,
     DoneEvent,
     ErrorEvent,
+    ReasoningEvent,
     StreamEvent,
     TokenEvent,
     ToolEndEvent,
@@ -36,6 +38,32 @@ class HoroAgentService:
     def __init__(self) -> None:
         self.model: ChatOpenAI | None = None
 
+    def _build_system_prompt(self) -> str:
+        return (
+            "You are Horo, SIGMA's founder copilot. Use uploaded founder documents only. "
+            "If the answer is not supported by retrieved documents, say 'I don't know' and suggest which document the founder should upload. "
+            "Keep answers concise and useful. "
+            "CITATION RULES: Every retrieved source already has a marker like [3]. Reuse the provided marker exactly. "
+            "Do not renumber citations, invent citations, or cite unsupported claims. "
+            "Place citations immediately after the supported claim. Reuse the same marker for repeated references to the same source. "
+            "If a statement is not supported by the retrieved documents, state uncertainty instead of citing."
+        )
+
+    def _extract_reasoning_text(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            parts: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return " ".join(part.strip() for part in parts if part.strip())
+        return ""
+
     def _build_search_tool(self):
         @tool
         async def search_user_documents_tool(
@@ -50,7 +78,7 @@ class HoroAgentService:
                 query=query,
                 k=context.retrieval_top_k,
             )
-            payload: list[dict[str, str | int | None]] = []
+            source_blocks: list[str] = []
             for item in retrieved:
                 artifact = context.citation_registry.register(
                     doc_id=item.document_id,
@@ -59,15 +87,14 @@ class HoroAgentService:
                     chunk_id=item.chunk_id,
                     page=item.page_number,
                 )
-                payload.append(
-                    {
-                        "marker": artifact.marker,
-                        "title": item.title,
-                        "page": item.page_number,
-                        "content": item.content,
-                    }
-                )
-            return json.dumps(payload)
+                header_parts = [f"[{artifact.marker}] {item.title}"]
+                if item.page_number is not None:
+                    header_parts.append(f"Page: {item.page_number}")
+                header_parts.append("Excerpt:")
+                source_blocks.append("\n".join(header_parts) + "\n" + item.content)
+            if not source_blocks:
+                return "No matching documents found."
+            return "\n\n".join(source_blocks)
 
         return search_user_documents_tool
 
@@ -102,11 +129,7 @@ class HoroAgentService:
         request_scoped_agent = create_agent(
             model=self._get_model(),
             tools=[self._build_search_tool()],
-            system_prompt=(
-                "You are Horo, SIGMA's founder copilot. Use uploaded founder documents only. "
-                "If the answer is not supported by retrieved documents, reply with 'I don't know' and suggest which document the founder should upload. "
-                "Keep answers concise and cite supported claims with [N] markers."
-            ),
+            system_prompt=self._build_system_prompt(),
             context_schema=HoroAgentContext,
         )
 
@@ -141,6 +164,11 @@ class HoroAgentService:
                         latest = node_messages[-1]
                         if node_name == "model":
                             tool_calls = getattr(latest, "tool_calls", None) or []
+                            reasoning_text = self._extract_reasoning_text(
+                                getattr(latest, "content", "")
+                            )
+                            if reasoning_text and tool_calls:
+                                yield ReasoningEvent(content=reasoning_text)
                             for tool_call in tool_calls:
                                 yield ToolStartEvent(
                                     tool=tool_call.get("name", "search_user_documents"),
@@ -148,11 +176,16 @@ class HoroAgentService:
                                     input=tool_call.get("args", {}),
                                 )
                         elif node_name == "tools":
-                            yield ToolEndEvent(
-                                tool=getattr(latest, "name", "search_user_documents"),
-                                tool_call_id=getattr(latest, "tool_call_id", ""),
-                                summary="Retrieved relevant document chunks.",
-                            )
+                            for tool_message in node_messages:
+                                yield ToolEndEvent(
+                                    tool=getattr(
+                                        tool_message, "name", "search_user_documents"
+                                    ),
+                                    tool_call_id=getattr(
+                                        tool_message, "tool_call_id", ""
+                                    ),
+                                    summary="Retrieved relevant document chunks.",
+                                )
                             for artifact in citation_registry.list():
                                 if artifact.marker in emitted_citations:
                                     continue

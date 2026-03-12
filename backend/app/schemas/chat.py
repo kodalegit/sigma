@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from pydantic import AliasChoices
 
 from app.schemas.common import ORMModel
 
@@ -23,6 +24,10 @@ class ChatMessageResponse(ORMModel):
     role: str
     content: str
     citations: list[dict] = Field(default_factory=list)
+    metadata: dict = Field(
+        validation_alias=AliasChoices("message_metadata", "metadata"),
+        default_factory=dict,
+    )
     created_at: datetime
 
 

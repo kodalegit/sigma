@@ -11,6 +11,24 @@ class StreamEvent:
 
 
 @dataclass(slots=True)
+class TitleEvent(StreamEvent):
+    title: str
+    type: str = field(default="title", init=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": self.type, "title": self.title}
+
+
+@dataclass(slots=True)
+class ReasoningEvent(StreamEvent):
+    content: str
+    type: str = field(default="reasoning", init=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": self.type, "content": self.content}
+
+
+@dataclass(slots=True)
 class TokenEvent(StreamEvent):
     delta: str
     type: str = field(default="token", init=False)
