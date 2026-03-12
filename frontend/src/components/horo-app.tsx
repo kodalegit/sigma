@@ -59,6 +59,7 @@ export function HoroApp() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{ id: string; name: string } | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [openDeleteThreadId, setOpenDeleteThreadId] = useState<string | null>(null);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
 
@@ -88,15 +89,27 @@ export function HoroApp() {
   const uploadMutation = useMutation({
     mutationFn: uploadDocument,
     onSuccess: async (result) => {
+      // Replace optimistic ID with real document ID
       setAttachedFile({ id: result.document.id, name: result.document.title });
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: () => {
+      // Clear optimistic file on error
+      setAttachedFile(null);
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteDocument,
-    onSuccess: async () => {
+    onSuccess: async (_, deletedDocumentId) => {
+      if (attachedFile?.id === deletedDocumentId) {
+        setAttachedFile(null);
+      }
+      setDeletingDocumentId(null);
       await queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: () => {
+      setDeletingDocumentId(null);
     },
   });
 
@@ -123,6 +136,7 @@ export function HoroApp() {
   const threadItems = threadsQuery.data ?? [];
   const documentItems = documentsQuery.data ?? [];
   const messageItems = activeThreadId ? (messagesQuery.data ?? []) : [];
+  const isLoadingMessages = messagesQuery.isLoading && Boolean(activeThreadId);
 
   const attachedDocStatus = attachedFile
     ? documentItems.find((d) => d.id === attachedFile.id)?.status ?? "processing"
@@ -322,6 +336,8 @@ export function HoroApp() {
       return;
     }
     event.target.value = "";
+    // Optimistically show the file immediately
+    setAttachedFile({ id: `uploading-${Date.now()}`, name: file.name });
     await uploadMutation.mutateAsync(file);
   }
 
@@ -330,6 +346,11 @@ export function HoroApp() {
       await deleteMutation.mutateAsync(attachedFile.id);
     }
     clearAttachedFile();
+  }
+
+  async function handleDeleteDocument(documentId: string) {
+    setDeletingDocumentId(documentId);
+    await deleteMutation.mutateAsync(documentId);
   }
 
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -406,12 +427,20 @@ export function HoroApp() {
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogCancel disabled={deletingDocumentId === document.id}>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => deleteMutation.mutate(document.id)}
+                                  onClick={() => void handleDeleteDocument(document.id)}
+                                  disabled={deletingDocumentId === document.id}
                                   className="bg-red-600 hover:bg-red-700 text-white"
                                 >
-                                  Delete
+                                  {deletingDocumentId === document.id ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Deleting...
+                                    </>
+                                  ) : (
+                                    "Delete"
+                                  )}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -515,8 +544,15 @@ export function HoroApp() {
                 <Badge className="hidden sm:inline-flex">Grounded answers only</Badge>
               </div>
 
-              <div className="flex-1 space-y-5 overflow-y-auto pb-6">
-                {!messageItems.length ? (
+              <div className="chat-scroll flex-1 space-y-6 overflow-y-auto pb-6">
+                {isLoadingMessages ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-6 text-[#64748b]">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span className="text-sm font-medium">Loading thread…</span>
+                  </div>
+                ) : null}
+
+                {!isLoadingMessages && !messageItems.length ? (
                   <Card className="bg-white">
                     <CardContent className="p-6 text-center">
                       <p className="text-sm font-medium text-[#213040]">Start a conversation with Horo</p>
@@ -527,43 +563,64 @@ export function HoroApp() {
                   </Card>
                 ) : null}
 
-                {messageItems.map((entry: ChatMessageRecord) => (
-                  <div
-                    key={entry.id}
-                    className={cn(
-                      "flex w-full",
-                      entry.role === "assistant" ? "justify-start" : "justify-end",
-                    )}
-                  >
-                    <div className={cn("max-w-3xl", entry.role === "assistant" ? "w-full" : "max-w-xl") }>
-                      <div className={cn("mb-2 flex items-center gap-2 text-xs text-[#8b9ab0]", entry.role === "user" ? "justify-end" : "justify-start")}>
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#dbe4ef] bg-white text-[11px] font-semibold text-[#64748b]">
-                          {entry.role === "assistant" ? "AI" : "You"}
-                        </div>
-                      </div>
-                      <Card className={cn(entry.role === "assistant" ? "bg-white" : "border-[#cfe2ff] bg-[#eef6ff]") }>
-                        <CardContent className="p-5">
-                          {entry.role === "assistant" ? <AssistantEventPanels events={entry.metadata?.events ?? []} /> : null}
+                {messageItems.map((entry: ChatMessageRecord) => {
+                  const isThinking = entry.id === streamingAssistantMessageId && isStreaming && !entry.content.trim();
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className={cn(
+                        "flex w-full",
+                        entry.role === "assistant" ? "justify-start" : "justify-end",
+                      )}
+                    >
+                      <div className={cn("max-w-3xl", entry.role === "assistant" ? "w-full" : "max-w-xl")}>
+                        <div className={cn("mb-2 flex items-center gap-2", entry.role === "user" ? "justify-end" : "justify-start")}>
                           {entry.role === "assistant" ? (
-                            <MarkdownMessage
-                              content={
-                                entry.id === streamingAssistantMessageId && isStreaming && !entry.content.trim()
-                                  ? "Thinking..."
-                                  : entry.content
-                              }
-                              citations={entry.citations}
-                            />
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-[#2a5ca8] to-[#1f3a5f] text-[10px] font-bold text-white shadow-sm">
+                              H
+                            </div>
                           ) : (
-                            <p className="whitespace-pre-wrap text-sm leading-7 text-[#213040]">{entry.content}</p>
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#dbe4ef] bg-white text-[10px] font-bold text-[#64748b]">
+                              You
+                            </div>
                           )}
-                          {entry.role === "assistant" && !(isStreaming && entry.id === streamingAssistantMessageId) ? (
-                            <SourcesPopover citations={entry.citations} />
-                          ) : null}
-                        </CardContent>
-                      </Card>
+                        </div>
+                        <Card className={cn(
+                          entry.role === "assistant"
+                            ? "border-[#e4eaf2] bg-white"
+                            : "border-[#d5e2f4] bg-[#f0f6ff]"
+                        )}>
+                          <CardContent className={cn("px-5", entry.role === "assistant" ? "py-4" : "py-4")}>
+                            {entry.role === "assistant" ? <AssistantEventPanels events={entry.metadata?.events ?? []} /> : null}
+                            {entry.role === "assistant" ? (
+                              isThinking ? (
+                                <div className="flex items-center gap-1 py-2">
+                                  <span className="text-sm text-[#7b8ba1]">Thinking</span>
+                                  <span className="flex items-center gap-[3px] pt-0.5">
+                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                  </span>
+                                </div>
+                              ) : (
+                                <MarkdownMessage
+                                  content={entry.content}
+                                  citations={entry.citations}
+                                />
+                              )
+                            ) : (
+                              <p className="whitespace-pre-wrap text-sm leading-7 text-[#2c3e50]">{entry.content}</p>
+                            )}
+                            {entry.role === "assistant" && !isThinking && !(isStreaming && entry.id === streamingAssistantMessageId) ? (
+                              <SourcesPopover citations={entry.citations} />
+                            ) : null}
+                          </CardContent>
+                        </Card>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {streamError ? <p className="text-sm text-red-500">{streamError}</p> : null}
                 <div ref={messagesEndRef} />

@@ -13,31 +13,26 @@ const citationPattern = /\[(\d+)\]/g;
 function CitationMarker({ marker, citation }: { marker: number; citation?: Citation }) {
   if (!citation) {
     return (
-      <span className="mx-0.5 inline-flex rounded-md bg-[#eef6ff] px-1.5 py-0.5 text-xs font-medium text-[#2663a8]">
-        [{marker}]
+      <span className="mx-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded bg-[#e8eef6] px-1 text-[10px] font-bold leading-none text-[#3d6a9e]">
+        {marker}
       </span>
     );
   }
-
-  const truncatedExcerpt = citation.excerpt.length > 220 ? `${citation.excerpt.slice(0, 220).trimEnd()}…` : citation.excerpt;
 
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="mx-0.5 inline-flex cursor-pointer rounded-md bg-[#eef6ff] px-1.5 py-0.5 text-xs font-medium text-[#2663a8]" />
+          <span className="mx-0.5 inline-flex h-[18px] min-w-[18px] cursor-pointer items-center justify-center rounded bg-[#e8eef6] px-1 text-[10px] font-bold leading-none text-[#3d6a9e] transition-colors hover:bg-[#d5e1f0] hover:text-[#2a5189]" />
         }
       >
         {marker}
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs whitespace-pre-line px-3 py-2 text-left">
-        <div>
-          <p className="font-medium">
-            {citation.title}
-            {citation.page ? ` · p.${citation.page}` : ""}
-          </p>
-          <p className="mt-1 text-[11px] leading-5 opacity-90">{truncatedExcerpt}</p>
-        </div>
+      <TooltipContent className="max-w-[220px] px-3 py-2 text-left">
+        <p className="text-xs font-semibold leading-snug">
+          {citation.title}
+          {citation.page ? `, p.${citation.page}` : ""}
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -86,7 +81,7 @@ export function MarkdownMessage({
   }, [citations]);
 
   return (
-    <div className="prose max-w-none text-[#324255] prose-p:my-2 prose-headings:text-[#152235] prose-strong:text-[#152235] prose-li:marker:text-[#5d6b80] prose-code:text-[#1f8fff] prose-a:text-[#1f8fff]">
+    <div className="prose prose-sm max-w-none text-[#2c3e50] prose-p:my-3 prose-p:leading-[1.8] prose-headings:text-[#152235] prose-headings:font-semibold prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-strong:text-[#1c2d40] prose-strong:font-semibold prose-li:my-1 prose-li:leading-[1.8] prose-li:marker:text-[#8b9ab0] prose-ul:my-3 prose-ol:my-3 prose-code:rounded prose-code:bg-[#f0f4f8] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[13px] prose-code:font-medium prose-code:text-[#3d6a9e] prose-code:before:content-none prose-code:after:content-none prose-a:text-[#2663a8] prose-a:underline prose-a:decoration-[#2663a8]/30 hover:prose-a:decoration-[#2663a8] prose-blockquote:border-l-[#d4dce8] prose-blockquote:text-[#5d6f85] prose-hr:border-[#e8eef5]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -99,7 +94,7 @@ export function MarkdownMessage({
             return <li>{processed}</li>;
           },
           a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-[#1f8fff] underline">
+            <a href={href} target="_blank" rel="noreferrer">
               {children}
             </a>
           ),

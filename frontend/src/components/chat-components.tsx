@@ -1,16 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { ChevronDown } from "lucide-react";
+import { BookOpen, ChevronDown, FileSearch, Search } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Popover,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { ChatEventRecord, Citation } from "@/lib/types";
@@ -89,8 +86,32 @@ function buildDisplayEvents(events: ChatEventRecord[]): DisplayEvent[] {
   return items;
 }
 
-function formatToolLabel(tool: string): string {
-  return tool.replaceAll("_", " ");
+function formatToolLabel(tool: string, status: "running" | "completed"): string {
+  const normalised = tool.toLowerCase().replaceAll("_", " ").trim();
+
+  if (normalised.includes("search") && normalised.includes("document")) {
+    return status === "running" ? "Searching your documents…" : "Searched your documents";
+  }
+  if (normalised.includes("search")) {
+    return status === "running" ? "Searching knowledge base…" : "Searched knowledge base";
+  }
+  if (normalised.includes("retrieve") || normalised.includes("fetch")) {
+    return status === "running" ? "Retrieving information…" : "Retrieved information";
+  }
+
+  const label = tool.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return status === "running" ? `Running ${label}…` : label;
+}
+
+function getToolIcon(tool: string) {
+  const normalised = tool.toLowerCase();
+  if (normalised.includes("search") && normalised.includes("document")) {
+    return <FileSearch className="h-3.5 w-3.5" />;
+  }
+  if (normalised.includes("search")) {
+    return <Search className="h-3.5 w-3.5" />;
+  }
+  return <BookOpen className="h-3.5 w-3.5" />;
 }
 
 export function SourcesPopover({ citations }: { citations: Citation[] }) {
@@ -104,27 +125,45 @@ export function SourcesPopover({ citations }: { citations: Citation[] }) {
         render={
           <button
             type="button"
-            className="mt-4 inline-flex items-center rounded-full border border-[#d5e4f4] bg-[#eef6ff] px-3 py-1 text-xs font-medium text-[#2663a8] transition hover:border-[#b7d3ef] hover:bg-[#e4f0ff]"
+            className="mt-5 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#dbe4ef] bg-[#f5f8fc] px-3 py-1.5 text-xs font-medium text-[#3d6a9e] transition-all hover:border-[#b7cfe6] hover:bg-[#edf3fa] hover:shadow-sm"
           />
         }
       >
-        {citations.length} source{citations.length === 1 ? "" : "s"}
+        <BookOpen className="h-3 w-3" />
+        Sources
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-3">
-        <PopoverHeader>
-          <PopoverTitle>Retrieved sources</PopoverTitle>
-          <PopoverDescription>These passages support the assistant response.</PopoverDescription>
-        </PopoverHeader>
-        <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">
-          {citations.map((citation) => (
-            <div key={`${citation.chunk_id}-${citation.marker}`} className="rounded-xl bg-[#f8fafc] p-3">
-              <p className="text-sm font-medium text-[#213040]">
-                [{citation.marker}] {citation.title}
-                {citation.page ? ` · p.${citation.page}` : ""}
-              </p>
-              <p className="mt-1 line-clamp-3 text-xs leading-5 text-[#6b7a90]">{citation.excerpt}</p>
-            </div>
-          ))}
+      <PopoverContent align="start" className="w-80 p-0">
+        <div className="border-b border-[#edf1f7] px-4 py-3">
+          <p className="text-sm font-semibold text-[#1c2d40]">Sources</p>
+          <p className="mt-0.5 text-xs text-[#7b8ba1]">
+            Passages supporting this response
+          </p>
+        </div>
+        <div className="max-h-72 overflow-y-auto p-2">
+          <div className="space-y-1">
+            {citations.map((citation, index) => (
+              <div
+                key={`${citation.chunk_id}-${citation.marker}`}
+                className="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[#f5f8fc]"
+              >
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#e8eef6] text-[10px] font-bold text-[#3d6a9e]">
+                  {citation.marker}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold leading-snug text-[#1c2d40]">
+                    {citation.title}
+                    {citation.page ? <span className="font-normal text-[#7b8ba1]"> · p.{citation.page}</span> : null}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-[1.6] text-[#5d6f85]">
+                    {citation.excerpt}
+                  </p>
+                  {index < citations.length - 1 ? (
+                    <div className="mt-3 border-b border-[#f0f3f8]" />
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </PopoverContent>
     </Popover>
@@ -139,36 +178,49 @@ export function AssistantEventPanels({ events }: { events: ChatEventRecord[] }) 
   }
 
   return (
-    <div className="mb-3 space-y-3">
+    <div className="mb-4 space-y-2">
       {items.map((item) => {
         if (item.kind === "reasoning") {
           return (
-            <div key={item.id} className="rounded-2xl border border-[#e7edf5] bg-[#fbfcfe] px-4 py-3 text-sm leading-6 text-[#516074]">
+            <div
+              key={item.id}
+              className="rounded-lg border-l-2 border-[#d4dce8] bg-[#f7f9fc] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#5d6f85]"
+            >
               {item.content}
             </div>
           );
         }
 
+        const label = formatToolLabel(item.tool, item.status);
+        const icon = getToolIcon(item.tool);
+
         return (
-          <details key={item.id} className="overflow-hidden rounded-2xl border border-[#dbe4ef] bg-white">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm">
-              <div className="min-w-0">
-                <p className="font-medium text-[#213040]">{formatToolLabel(item.tool)}</p>
-                <p className="text-xs text-[#7b8ba1]">
-                  {item.status === "running" ? "Running" : "Completed"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge className={cn(item.status === "running" ? "border-[#d8e7fb] bg-[#eef6ff] text-[#2663a8]" : "border-[#cbe6d6] bg-[#edf9f1] text-[#2b7a4b]")}>{item.status}</Badge>
-                <ChevronDown className="h-4 w-4 text-[#7b8ba1]" />
-              </div>
-            </summary>
-            <div className="border-t border-[#eef2f7] px-4 py-3 text-sm text-[#516074]">
-              {item.input ? (
-                <p className="wrap-break-word text-xs text-[#7b8ba1]">Input: {JSON.stringify(item.input)}</p>
+          <details key={item.id} className="group overflow-hidden rounded-lg border border-[#e4eaf2] bg-[#fafbfd]">
+            <summary className="flex cursor-pointer list-none items-center gap-2.5 px-3.5 py-2.5 text-sm select-none">
+              <span
+                className={cn(
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                  item.status === "running"
+                    ? "bg-[#eef5ff] text-[#3d6a9e]"
+                    : "bg-[#edf5f0] text-[#2d7a4b]"
+                )}
+              >
+                {item.status === "running" ? (
+                  <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                ) : (
+                  icon
+                )}
+              </span>
+              <span className="flex-1 text-[13px] font-medium text-[#2c3e50]">{label}</span>
+              {item.summary ? (
+                <ChevronDown className="h-3.5 w-3.5 text-[#9ba8b8] transition-transform group-open:rotate-180" />
               ) : null}
-              <p className={cn(item.input ? "mt-2" : "")}>{item.summary ?? "Searching your knowledge base..."}</p>
-            </div>
+            </summary>
+            {item.summary ? (
+              <div className="border-t border-[#eef2f7] px-3.5 py-2.5">
+                <p className="text-[13px] leading-relaxed text-[#5d6f85]">{item.summary}</p>
+              </div>
+            ) : null}
           </details>
         );
       })}
@@ -178,9 +230,9 @@ export function AssistantEventPanels({ events }: { events: ChatEventRecord[] }) 
 
 export function SigmaMark() {
   return (
-    <div className="flex items-center gap-2 text-[#2a5ca8]">
+    <div className="flex items-center gap-2 text-[#1f3a5f]">
       <span className="text-lg leading-none">✦</span>
-      <span className="text-2xl font-semibold tracking-tight">sigma</span>
+      <span className="text-xl font-bold tracking-tight">sigma</span>
     </div>
   );
 }
