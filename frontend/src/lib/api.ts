@@ -32,11 +32,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
+    const contentType = response.headers.get("content-type") || "";
+    let message = response.statusText || "Request failed";
+
+    try {
+      if (contentType.includes("application/json")) {
+        const data = (await response.json()) as { detail?: string; message?: string };
+        message = data?.detail || data?.message || message;
+      } else {
+        const text = await response.text();
+        const stripped = text.replace(/<[^>]*>?/gm, "").trim();
+        if (stripped) {
+          message = stripped.slice(0, 280);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to parse error response", error);
+    }
+
+    throw new Error(`${message} (status ${response.status})`);
   }
 
-  return response.json() as Promise<T>;
+  return response.json();
 }
 
 export function listDemoUsers(): Promise<{ users: DemoUserCredentials[] }> {
