@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useMutation,
@@ -161,7 +161,9 @@ export function HoroApp() {
   const queryClient = useQueryClient();
   const { demoUsers, error: authError, isAuthenticating, isReady, login, logout, user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
   const selectedThreadId = searchParams.get("thread");
   const [message, setMessage] = useState("");
   const [activeThreadId, setActiveThreadId] = useState<string | null>(selectedThreadId);
@@ -169,6 +171,7 @@ export function HoroApp() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{ id: string; name: string } | null>(null);
+  const [pendingNewThreadMessage, setPendingNewThreadMessage] = useState<string | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [openDeleteThreadId, setOpenDeleteThreadId] = useState<string | null>(null);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
@@ -249,6 +252,19 @@ export function HoroApp() {
   const documentItems = documentsQuery.data ?? [];
   const messageItems = activeThreadId ? (messagesQuery.data ?? []) : [];
   const isLoadingMessages = messagesQuery.isLoading && Boolean(activeThreadId);
+  const displayMessageItems = !activeThreadId && pendingNewThreadMessage
+    ? [
+        {
+          id: "pending-new-thread-user-message",
+          thread_id: "pending-new-thread",
+          role: "user" as const,
+          content: pendingNewThreadMessage,
+          citations: [],
+          metadata: {},
+          created_at: new Date().toISOString(),
+        },
+      ]
+    : messageItems;
 
   const attachedDocStatus = attachedFile
     ? documentItems.find((d) => d.id === attachedFile.id)?.status ?? "processing"
@@ -257,7 +273,7 @@ export function HoroApp() {
   const isSendDisabled = isStreaming || isFileProcessing;
 
   const activeThread = threadItems.find((thread: ThreadRecord) => thread.id === activeThreadId) ?? null;
-  const lastMessage = messageItems.length ? messageItems[messageItems.length - 1] : null;
+  const lastMessage = displayMessageItems.length ? displayMessageItems[displayMessageItems.length - 1] : null;
 
   useEffect(() => {
     setActiveThreadId(selectedThreadId);
@@ -273,14 +289,49 @@ export function HoroApp() {
     setStreamError(null);
     setIsStreaming(false);
     setAttachedFile(null);
+    setPendingNewThreadMessage(null);
     setDeletingDocumentId(null);
     setOpenDeleteThreadId(null);
     setDeletingThreadId(null);
   }, [user]);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, []);
+
+  const updateAutoScrollPreference = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      shouldAutoScrollRef.current = true;
+      return;
+    }
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 96;
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [activeThreadId, messageItems.length, lastMessage?.id, lastMessage?.content, lastMessage?.citations.length, lastMessage?.metadata?.events?.length]);
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    updateAutoScrollPreference();
+    container.addEventListener("scroll", updateAutoScrollPreference, { passive: true });
+
+    return () => {
+      container.removeEventListener("scroll", updateAutoScrollPreference);
+    };
+  }, [updateAutoScrollPreference]);
+
+  useLayoutEffect(() => {
+    if (!shouldAutoScrollRef.current) {
+      return;
+    }
+
+    const behavior: ScrollBehavior = isStreaming ? "auto" : "smooth";
+    scrollToBottom(behavior);
+  }, [activeThreadId, displayMessageItems.length, lastMessage?.id, lastMessage?.content, isStreaming, scrollToBottom]);
 
   const clearAttachedFile = useCallback(() => {
     setAttachedFile(null);
@@ -359,6 +410,12 @@ export function HoroApp() {
 
     setStreamError(null);
     setIsStreaming(true);
+    shouldAutoScrollRef.current = true;
+    setMessage("");
+    setAttachedFile(null);
+    if (!activeThreadId) {
+      setPendingNewThreadMessage(nextMessage);
+    }
     let threadId: string | null = null;
     let assistantMessageId: string | null = null;
 
@@ -386,8 +443,7 @@ export function HoroApp() {
         created_at: createdAt,
       };
 
-      setMessage("");
-      setAttachedFile(null);
+      setPendingNewThreadMessage(null);
       setStreamingAssistantMessageId(assistantMessageId);
       appendMessagesToThread(threadId, [optimisticUserMessage, optimisticAssistantMessage]);
 
@@ -447,6 +503,7 @@ export function HoroApp() {
 
       await queryClient.invalidateQueries({ queryKey: ["threads"] });
     } catch (error) {
+      setPendingNewThreadMessage(null);
       setStreamError(error instanceof Error ? error.message : "Failed to stream response.");
       if (threadId) {
         await queryClient.invalidateQueries({ queryKey: ["messages", threadId] });
@@ -708,7 +765,7 @@ export function HoroApp() {
                 </div>
               </div>
 
-              <div className="chat-scroll flex-1 space-y-6 overflow-y-auto pb-6">
+              <div ref={messagesContainerRef} className="chat-scroll flex-1 space-y-6 overflow-y-auto pr-3 pb-6">
                 {isLoadingMessages ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-6 text-[#64748b]">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -716,7 +773,7 @@ export function HoroApp() {
                   </div>
                 ) : null}
 
-                {!isLoadingMessages && !messageItems.length ? (
+                {!isLoadingMessages && !displayMessageItems.length ? (
                   <Card className="bg-white">
                     <CardContent className="p-6 text-center">
                       <p className="text-sm font-medium text-[#213040]">Start a conversation with Horo</p>
@@ -727,7 +784,7 @@ export function HoroApp() {
                   </Card>
                 ) : null}
 
-                {messageItems.map((entry: ChatMessageRecord) => {
+                {displayMessageItems.map((entry: ChatMessageRecord) => {
                   const isThinking = entry.id === streamingAssistantMessageId && isStreaming && !entry.content.trim();
 
                   return (
@@ -741,7 +798,7 @@ export function HoroApp() {
                       <div className={cn("max-w-3xl", entry.role === "assistant" ? "w-full" : "max-w-xl")}>
                         <div className={cn("mb-2 flex items-center gap-2", entry.role === "user" ? "justify-end" : "justify-start")}>
                           {entry.role === "assistant" ? (
-                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-[#2a5ca8] to-[#1f3a5f] text-[10px] font-bold text-white shadow-sm">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-[#2a5ca8] to-[#1f3a5f] text-[10px] font-bold text-white shadow-sm">
                               H
                             </div>
                           ) : (
@@ -750,37 +807,35 @@ export function HoroApp() {
                             </div>
                           )}
                         </div>
-                        <Card className={cn(
-                          entry.role === "assistant"
-                            ? "border-[#e4eaf2] bg-white"
-                            : "border-[#d5e2f4] bg-[#f0f6ff]"
-                        )}>
-                          <CardContent className={cn("px-5", entry.role === "assistant" ? "py-4" : "py-4")}>
-                            {entry.role === "assistant" ? <AssistantEventPanels events={entry.metadata?.events ?? []} /> : null}
-                            {entry.role === "assistant" ? (
-                              isThinking ? (
-                                <div className="flex items-center gap-1 py-2">
-                                  <span className="text-sm text-[#7b8ba1]">Thinking</span>
-                                  <span className="flex items-center gap-[3px] pt-0.5">
-                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
-                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
-                                    <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
-                                  </span>
-                                </div>
-                              ) : (
-                                <MarkdownMessage
-                                  content={entry.content}
-                                  citations={entry.citations}
-                                />
-                              )
+                        {entry.role === "assistant" ? (
+                          <div className="px-1 pb-2">
+                            <AssistantEventPanels events={entry.metadata?.events ?? []} />
+                            {isThinking ? (
+                              <div className="flex items-center gap-1 py-2 text-sm text-[#7b8ba1]">
+                                <span>Thinking</span>
+                                <span className="flex items-center gap-[3px] pt-0.5">
+                                  <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                  <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                  <span className="thinking-dot h-[3px] w-[3px] rounded-full bg-[#7b8ba1]" />
+                                </span>
+                              </div>
                             ) : (
-                              <p className="whitespace-pre-wrap text-sm leading-7 text-[#2c3e50]">{entry.content}</p>
+                              <MarkdownMessage
+                                content={entry.content}
+                                citations={entry.citations}
+                              />
                             )}
-                            {entry.role === "assistant" && !isThinking && !(isStreaming && entry.id === streamingAssistantMessageId) ? (
+                            {!isThinking && !(isStreaming && entry.id === streamingAssistantMessageId) ? (
                               <SourcesPopover citations={entry.citations} />
                             ) : null}
-                          </CardContent>
-                        </Card>
+                          </div>
+                        ) : (
+                          <Card className="border-[#d5e2f4] bg-[#f0f6ff] shadow-none">
+                            <CardContent className="px-5 py-4">
+                              <p className="whitespace-pre-wrap text-sm leading-7 text-[#2c3e50]">{entry.content}</p>
+                            </CardContent>
+                          </Card>
+                        )}
                       </div>
                     </div>
                   );
@@ -790,8 +845,8 @@ export function HoroApp() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <Card className="sticky bottom-0 mt-auto border-[#bfd8f7] shadow-[0_16px_50px_rgba(63,94,139,0.08)]">
-                <CardContent className="p-3">
+              <Card className="sticky bottom-0 mt-auto border-[#dbe4ef] shadow-[0_14px_40px_rgba(63,94,139,0.08)]">
+                <CardContent className="p-2.5">
                   <form className="space-y-3" onSubmit={handleSubmit}>
                     {attachedFile ? (
                       <div className="flex items-center justify-between rounded-xl border border-[#dbe4ef] bg-[#f8fbff] px-3 py-2 text-sm">
@@ -834,7 +889,7 @@ export function HoroApp() {
                       onChange={(event) => setMessage(event.target.value)}
                       onKeyDown={handleComposerKeyDown}
                       placeholder="Ask Horo about your uploaded documents..."
-                      className="min-h-28 resize-none border-0 bg-transparent p-3 shadow-none focus:ring-0"
+                      className="min-h-20 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 shadow-none focus:ring-0"
                       disabled={isStreaming}
                     />
                     <div className="flex items-center justify-between gap-4 border-t border-[#e8eef5] px-2 pt-3">
@@ -878,26 +933,6 @@ export function HoroApp() {
                   <p className="mt-2 text-sm leading-6 text-[#6b7a90]">
                     Horo answers using uploaded founder documents only and cites supporting chunks inline for the active founder tenant.
                   </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-white">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-[#213040]">Knowledge base</p>
-                    <Badge>{documentItems.length}</Badge>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {documentItems.slice(0, 4).map((document: DocumentRecord) => (
-                      <div key={document.id} className="rounded-xl bg-[#f8fafc] p-3">
-                        <p className="truncate text-sm font-medium text-[#213040]">{document.title}</p>
-                        <p className="mt-1 text-xs text-[#7b8ba1]">{document.status}</p>
-                      </div>
-                    ))}
-                    {!documentItems.length ? (
-                      <p className="text-sm text-[#7b8ba1]">Upload documents to populate the retrieval context.</p>
-                    ) : null}
-                  </div>
                 </CardContent>
               </Card>
 

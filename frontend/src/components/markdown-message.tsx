@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Fragment, useMemo } from "react";
+import { Fragment, memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -9,6 +9,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { Citation } from "@/lib/types";
 
 const citationPattern = /\[(\d+)\]/g;
+
+function parseMarkdownIntoBlocks(markdown: string): string[] {
+  return markdown
+    .split(/\n\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
 
 function CitationMarker({ marker, citation }: { marker: number; citation?: Citation }) {
   if (!citation) {
@@ -69,6 +76,47 @@ function renderTextWithCitations(
   return parts;
 }
 
+const MemoizedMarkdownBlock = memo(
+  ({ content, citationMap }: { content: string; citationMap: Map<number, Citation> }) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => {
+          const processed = processChildren(children, citationMap);
+          return <p>{processed}</p>;
+        },
+        ul: ({ children }) => (
+          <ul className="mb-3 list-disc space-y-2 pl-5 marker:text-[#5e7492]">
+            {children}
+          </ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="mb-3 list-decimal space-y-2 pl-5 marker:text-[#5e7492]">
+            {children}
+          </ol>
+        ),
+        li: ({ children }) => {
+          const processed = processChildren(children, citationMap);
+          return <li className="leading-7 text-[#1f2f46]">{processed}</li>;
+        },
+        h1: ({ children }) => <h1>{children}</h1>,
+        h2: ({ children }) => <h2>{children}</h2>,
+        h3: ({ children }) => <h3>{children}</h3>,
+        a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+          <a href={href} target="_blank" rel="noreferrer">
+            {children}
+          </a>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  ),
+  (previous, next) => previous.content === next.content && previous.citationMap === next.citationMap,
+);
+
+MemoizedMarkdownBlock.displayName = "MemoizedMarkdownBlock";
+
 export function MarkdownMessage({
   content,
   citations,
@@ -80,28 +128,21 @@ export function MarkdownMessage({
     return new Map(citations.map((c) => [c.marker, c]));
   }, [citations]);
 
+  const blocks = useMemo(() => parseMarkdownIntoBlocks(content), [content]);
+
+  if (!content.trim()) {
+    return null;
+  }
+
   return (
-    <div className="prose prose-sm max-w-none text-[#2c3e50] prose-p:my-3 prose-p:leading-[1.8] prose-headings:text-[#152235] prose-headings:font-semibold prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-strong:text-[#1c2d40] prose-strong:font-semibold prose-li:my-1 prose-li:leading-[1.8] prose-li:marker:text-[#8b9ab0] prose-ul:my-3 prose-ol:my-3 prose-code:rounded prose-code:bg-[#f0f4f8] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[13px] prose-code:font-medium prose-code:text-[#3d6a9e] prose-code:before:content-none prose-code:after:content-none prose-a:text-[#2663a8] prose-a:underline prose-a:decoration-[#2663a8]/30 hover:prose-a:decoration-[#2663a8] prose-blockquote:border-l-[#d4dce8] prose-blockquote:text-[#5d6f85] prose-hr:border-[#e8eef5]">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          p: ({ children }) => {
-            const processed = processChildren(children, citationMap);
-            return <p>{processed}</p>;
-          },
-          li: ({ children }) => {
-            const processed = processChildren(children, citationMap);
-            return <li>{processed}</li>;
-          },
-          a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+    <div className="prose prose-sm max-w-none text-[#243648] prose-p:my-3 prose-p:leading-7 prose-headings:mt-6 prose-headings:mb-3 prose-headings:text-[#152235] prose-headings:font-semibold prose-h1:text-[1.35rem] prose-h2:text-[1.1rem] prose-h3:text-base prose-strong:font-semibold prose-strong:text-[#152235] prose-ul:my-4 prose-ul:list-disc prose-ul:pl-6 prose-ol:my-4 prose-ol:list-decimal prose-ol:pl-6 prose-li:my-1.5 prose-li:pl-1 prose-li:leading-7 prose-li:marker:text-[#7f90a7] prose-code:rounded-md prose-code:bg-[#eef4fb] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[13px] prose-code:font-medium prose-code:text-[#2f5f93] prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-2xl prose-pre:border prose-pre:border-[#dbe4ef] prose-pre:bg-[#f8fbff] prose-pre:px-4 prose-pre:py-3 prose-pre:text-[13px] prose-a:text-[#2663a8] prose-a:underline prose-a:decoration-[#2663a8]/30 hover:prose-a:decoration-[#2663a8] prose-blockquote:rounded-r-xl prose-blockquote:border-l-4 prose-blockquote:border-l-[#d4dce8] prose-blockquote:bg-[#f8fafc] prose-blockquote:py-1 prose-blockquote:pl-4 prose-blockquote:text-[#5d6f85] prose-hr:my-6 prose-hr:border-[#e8eef5]">
+      {blocks.map((block, index) => (
+        <MemoizedMarkdownBlock
+          key={`markdown-block-${index}`}
+          content={block}
+          citationMap={citationMap}
+        />
+      ))}
     </div>
   );
 }

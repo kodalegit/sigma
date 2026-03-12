@@ -48,8 +48,8 @@ function buildDisplayEvents(events: ChatEventRecord[]): DisplayEvent[] {
           id: `tool-${toolCallId}`,
           toolCallId,
           tool: event.tool,
-          input: event.input,
           status: "running",
+          input: event.input,
         });
       }
       return;
@@ -77,6 +77,7 @@ function buildDisplayEvents(events: ChatEventRecord[]): DisplayEvent[] {
           ...existing,
           tool: event.tool,
           summary: event.summary,
+          input: existing.input,
           status: "completed",
         };
       }
@@ -216,9 +217,16 @@ export function AssistantEventPanels({ events }: { events: ChatEventRecord[] }) 
                 <ChevronDown className="h-3.5 w-3.5 text-[#9ba8b8] transition-transform group-open:rotate-180" />
               ) : null}
             </summary>
-            {item.summary ? (
-              <div className="border-t border-[#eef2f7] px-3.5 py-2.5">
-                <p className="text-[13px] leading-relaxed text-[#5d6f85]">{item.summary}</p>
+            {item.summary || item.input ? (
+              <div className="border-t border-[#eef2f7] px-3.5 py-2.5 space-y-1.5">
+                {item.input && typeof item.input.query === "string" ? (
+                  <p className="text-[13px] leading-relaxed text-[#2c3e50]">
+                    Query: <span className="font-medium">{item.input.query}</span>
+                  </p>
+                ) : null}
+                {item.summary ? (
+                  <p className="text-[13px] leading-relaxed text-[#5d6f85]">{item.summary}</p>
+                ) : null}
               </div>
             ) : null}
           </details>
