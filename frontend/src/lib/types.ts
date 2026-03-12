@@ -8,6 +8,27 @@ export type DocumentRecord = {
   created_at: string;
 };
 
+export type AuthenticatedUser = {
+  id: string;
+  email: string;
+  tenant_name: string;
+  created_at: string;
+};
+
+export type DemoUserCredentials = {
+  id: string;
+  email: string;
+  password: string;
+  tenant_name: string;
+};
+
+export type LoginResponse = {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  user: AuthenticatedUser;
+};
+
 export type ThreadRecord = {
   id: string;
   user_id: string;

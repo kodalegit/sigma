@@ -10,14 +10,15 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/sigma"
+    jwt_secret_key: str = "sigma-demo-secret-key"
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_minutes: int = 60 * 12
     openai_api_key: str | None = None
     openai_chat_model: str = "gpt-5-nano"
     openai_embedding_model: str = "text-embedding-3-small"
     retrieval_top_k: int = 5
     chunk_size: int = 1000
     chunk_overlap: int = 200
-    auth_stub_user_id: str = "00000000-0000-0000-0000-000000000001"
-    auth_stub_user_email: str = "founder@example.com"
 
     model_config = SettingsConfigDict(
         env_file=".env",

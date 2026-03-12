@@ -10,6 +10,7 @@ import {
 
 import { AlertTriangle, Check, FileText, Loader2, Plus, Send, Trash2, Upload, X } from "lucide-react";
 
+import { useAuth } from "@/components/auth-provider";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,16 +41,125 @@ import {
 import type {
   ChatEventRecord,
   ChatMessageRecord,
+  DemoUserCredentials,
   DocumentRecord,
   StreamEvent,
   ThreadRecord,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+function LoginScreen({
+  demoUsers,
+  error,
+  isAuthenticating,
+  onLogin,
+}: {
+  demoUsers: DemoUserCredentials[];
+  error: string | null;
+  isAuthenticating: boolean;
+  onLogin: (email: string, password: string) => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4 py-10 text-[#152235]">
+      <Card className="w-full max-w-3xl bg-white">
+        <CardContent className="grid gap-6 p-6 md:grid-cols-[1.1fr_0.9fr] md:p-8">
+          <div className="space-y-4">
+            <SigmaMark />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">SIGMA Horo Demo</p>
+              <h1 className="mt-2 text-3xl font-semibold text-[#152235]">Founder tenant login</h1>
+              <p className="mt-3 text-sm leading-6 text-[#6b7a90]">
+                Sign in as one of the demo founders to show that uploaded documents and chat threads remain isolated inside that founder&apos;s tenant.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#dbe4ef] bg-[#f8fbff] p-4">
+              <p className="text-sm font-semibold text-[#213040]">What this demonstrates</p>
+              <div className="mt-3 space-y-2 text-sm text-[#6b7a90]">
+                <p>Each founder signs in with a separate JWT-backed identity.</p>
+                <p>Document uploads, retrieval, and threads are all filtered by the authenticated founder&apos;s `user_id`.</p>
+                <p>Switching founders gives you a clean workspace backed by a different tenant record set.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-[#e2e8f0] bg-[#fbfdff] p-4">
+            <div>
+              <p className="text-sm font-semibold text-[#213040]">Login</p>
+              <p className="mt-1 text-xs text-[#7b8ba1]">Use a test account below or enter the credentials manually.</p>
+            </div>
+
+            <div className="space-y-3">
+              {demoUsers.map((demoUser) => (
+                <button
+                  key={demoUser.id}
+                  type="button"
+                  onClick={() => {
+                    setEmail(demoUser.email);
+                    setPassword(demoUser.password);
+                    void onLogin(demoUser.email, demoUser.password);
+                  }}
+                  disabled={isAuthenticating}
+                  className="w-full rounded-2xl border border-[#dbe4ef] bg-white px-4 py-3 text-left transition hover:border-[#bfdbfe] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#213040]">{demoUser.email}</p>
+                      <p className="mt-1 text-xs text-[#7b8ba1]">Tenant: {demoUser.tenant_name}</p>
+                    </div>
+                    <Badge>{demoUser.password}</Badge>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void onLogin(email, password);
+              }}
+            >
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-[#516074]">Email</p>
+                <input
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-xl border border-[#dbe4ef] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#1f8fff]"
+                  placeholder="founder@acme.io"
+                  autoComplete="email"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-[#516074]">Password</p>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full rounded-xl border border-[#dbe4ef] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#1f8fff]"
+                  placeholder="acme-demo"
+                  autoComplete="current-password"
+                />
+              </div>
+              {error ? <p className="text-sm text-red-500">{error}</p> : null}
+              <Button type="submit" className="w-full rounded-xl" disabled={isAuthenticating || !email.trim() || !password.trim()}>
+                {isAuthenticating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+              </Button>
+            </form>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function HoroApp() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const { demoUsers, error: authError, isAuthenticating, isReady, login, logout, user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const selectedThreadId = searchParams.get("thread");
@@ -66,11 +176,13 @@ export function HoroApp() {
   const threadsQuery = useQuery({
     queryKey: ["threads"],
     queryFn: listThreads,
+    enabled: Boolean(user),
   });
 
   const documentsQuery = useQuery({
     queryKey: ["documents"],
     queryFn: listDocuments,
+    enabled: Boolean(user),
     refetchInterval: (query) => {
       const data = query.state.data as DocumentRecord[] | undefined;
       const hasProcessing = data?.some((d) => d.status !== "ready") ?? false;
@@ -81,7 +193,7 @@ export function HoroApp() {
   const messagesQuery = useQuery({
     queryKey: ["messages", activeThreadId],
     queryFn: () => listMessages(activeThreadId as string),
-    enabled: Boolean(activeThreadId),
+    enabled: Boolean(user && activeThreadId),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -150,6 +262,21 @@ export function HoroApp() {
   useEffect(() => {
     setActiveThreadId(selectedThreadId);
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (user) {
+      return;
+    }
+    setMessage("");
+    setActiveThreadId(null);
+    setStreamingAssistantMessageId(null);
+    setStreamError(null);
+    setIsStreaming(false);
+    setAttachedFile(null);
+    setDeletingDocumentId(null);
+    setOpenDeleteThreadId(null);
+    setDeletingThreadId(null);
+  }, [user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -360,6 +487,28 @@ export function HoroApp() {
     }
   }
 
+  if (!isReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] text-[#516074]">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Restoring session...
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        demoUsers={demoUsers}
+        error={authError}
+        isAuthenticating={isAuthenticating}
+        onLogin={login}
+      />
+    );
+  }
+
   return (
     <div className="h-screen overflow-hidden bg-[#f5f7fb] text-[#152235]">
       <div className="grid h-screen grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
@@ -374,6 +523,18 @@ export function HoroApp() {
             <div className="mt-8">
               <p className="text-sm font-semibold text-[#213040]">Chat with Horo</p>
               <p className="mt-1 text-sm text-[#7b8ba1]">The Co-Pilot for your business</p>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[#dbe4ef] bg-white p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#213040]">{user.email}</p>
+                  <p className="mt-1 text-xs text-[#7b8ba1]">Tenant: {user.tenant_name}</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={logout} className="cursor-pointer">
+                  Switch
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -541,7 +702,10 @@ export function HoroApp() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Horo Workspace</p>
                   <h1 className="mt-1 text-2xl font-semibold text-[#152235]">{activeThread?.title ?? "Select or create a thread"}</h1>
                 </div>
-                <Badge className="hidden sm:inline-flex">Grounded answers only</Badge>
+                <div className="hidden items-center gap-2 sm:flex">
+                  <Badge>{user.tenant_name}</Badge>
+                  <Badge className="hidden sm:inline-flex">Grounded answers only</Badge>
+                </div>
               </div>
 
               <div className="chat-scroll flex-1 space-y-6 overflow-y-auto pb-6">
@@ -712,7 +876,7 @@ export function HoroApp() {
                 <CardContent className="p-4">
                   <p className="text-sm font-semibold text-[#213040]">Session summary</p>
                   <p className="mt-2 text-sm leading-6 text-[#6b7a90]">
-                    Horo answers using uploaded founder documents only and cites supporting chunks inline.
+                    Horo answers using uploaded founder documents only and cites supporting chunks inline for the active founder tenant.
                   </p>
                 </CardContent>
               </Card>

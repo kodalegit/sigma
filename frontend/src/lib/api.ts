@@ -1,13 +1,33 @@
-import type { ChatMessageRecord, DocumentRecord, StreamEvent, ThreadRecord } from "@/lib/types";
+import type {
+  AuthenticatedUser,
+  ChatMessageRecord,
+  DemoUserCredentials,
+  DocumentRecord,
+  LoginResponse,
+  StreamEvent,
+  ThreadRecord,
+} from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+
+let authToken: string | null = null;
+
+function buildHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  if (authToken) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+  return headers;
+}
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-    },
+    headers: buildHeaders(init?.headers),
     cache: "no-store",
   });
 
@@ -17,6 +37,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export function listDemoUsers(): Promise<{ users: DemoUserCredentials[] }> {
+  return request<{ users: DemoUserCredentials[] }>("/auth/test-users");
+}
+
+export function login(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function getCurrentUser(): Promise<AuthenticatedUser> {
+  return request<AuthenticatedUser>("/auth/me");
 }
 
 export function listDocuments(): Promise<DocumentRecord[]> {
@@ -45,6 +81,7 @@ export async function uploadDocument(file: File): Promise<{ chunks_indexed: numb
 
   const response = await fetch(`${API_BASE_URL}/documents/upload`, {
     method: "POST",
+    headers: buildHeaders(),
     body: formData,
   });
 
@@ -59,6 +96,7 @@ export async function uploadDocument(file: File): Promise<{ chunks_indexed: numb
 export async function deleteDocument(documentId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
     method: "DELETE",
+    headers: buildHeaders(),
   });
 
   if (!response.ok) {
@@ -70,6 +108,7 @@ export async function deleteDocument(documentId: string): Promise<void> {
 export async function deleteThread(threadId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/chat/threads/${threadId}`, {
     method: "DELETE",
+    headers: buildHeaders(),
   });
 
   if (!response.ok) {
@@ -85,7 +124,7 @@ export async function streamChat(
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ thread_id: threadId, message }),
   });
 

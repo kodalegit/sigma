@@ -15,4 +15,5 @@ dependencies = [
     "pgvector>=0.4.1",
     "pymupdf>=1.26.5",
     "python-multipart>=0.0.20",
+    "PyJWT>=2.10.1",
 ]
