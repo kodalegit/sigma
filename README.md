@@ -41,6 +41,26 @@ Example behaviors:
 
 This prototype keeps retrieval simple, explainable, and tenant-scoped.
 
+### End-to-end flow
+
+1. **Founder uploads a file**
+   - A document is attached to the authenticated founder and never shared across tenants.
+
+2. **The backend prepares it for retrieval**
+   - The file is parsed into page-aware chunks, embedded, and stored with founder ownership metadata.
+
+3. **The founder asks Horo a question**
+   - The query is embedded and matched only against that founder's chunks.
+
+4. **Horo answers from retrieved evidence**
+   - The model receives the top matching chunks and is instructed to stay grounded in those results.
+
+5. **The UI shows citations**
+   - Answers include inline citations that map back to the source document and page so the founder can verify the response quickly.
+
+6. **If evidence is missing, Horo says so**
+   - Instead of guessing, the assistant gives an `I don't know` style response and suggests uploading the missing document.
+
 ### Retrieval pipeline
 
 1. **Upload → parse → chunk**
@@ -60,6 +80,7 @@ This prototype keeps retrieval simple, explainable, and tenant-scoped.
 
 - Inline markers like `[1]` map to document title, excerpt, and optional page.
 - The UI renders inline markers plus a sources popover so founders can inspect evidence quickly.
+- Citations are part of the answer flow, not an afterthought: retrieved chunk metadata is preserved through generation so the UI can show where each answer came from.
 - If evidence is weak or missing, the assistant should say it doesn’t know and prompt for the right file.
 
 ### Isolation and safety
@@ -78,6 +99,55 @@ The prototype includes simple JWT-based demo authentication to show tenant isola
   - `founder@nova.io` / `nova-demo`
 
 Switching users shows that uploaded files, retrieval, and chat history remain private to each founder.
+
+## Live demo
+
+You can review the deployed prototype here:
+
+- **App URL**
+  - `https://sigma-eta-one.vercel.app/`
+
+### Example UI
+
+![Chat interface with grounded citations](assets/screenshot.png)
+
+### Suggested review flow
+
+1. **Log in with a demo founder**
+   - Start with `founder@acme.io` / `acme-demo`.
+
+2. **Upload a document**
+   - Upload a policy, handbook, or finance-related file.
+   - Wait for the upload to finish so the file can be chunked and indexed.
+
+3. **Ask a grounded question**
+   - Try a question that should be answerable from the uploaded file.
+   - Confirm that Horo responds briefly and includes citations tied to the uploaded source.
+
+4. **Inspect the citations**
+   - Open the inline citation or source UI and verify that the answer points to the expected document and page.
+
+5. **Ask a question the file does not support**
+   - For example, ask for a metric or policy detail that is not present.
+   - Confirm that Horo avoids guessing, says it does not know, and suggests uploading the right supporting file.
+
+6. **Switch to the second founder**
+   - Log in as `founder@nova.io` / `nova-demo`.
+   - Verify that the other founder cannot see Acme's uploads, retrieval results, or chat history.
+
+### What to look for
+
+- **Grounded answers**
+  - Responses should stay short and based on uploaded context.
+
+- **Useful citations**
+  - Each answer should point back to a document title and page when available.
+
+- **Good failure behavior**
+  - Missing evidence should produce an `I don't know` style response rather than a fabricated answer.
+
+- **Tenant isolation**
+  - Uploaded content and retrieval should remain scoped to the active founder.
 
 ## Stack
 
