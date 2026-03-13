@@ -146,6 +146,8 @@ export function HoroApp() {
   const threadItems = threadsQuery.data ?? [];
   const documentItems = documentsQuery.data ?? [];
   const messageItems = activeThreadId ? (messagesQuery.data ?? []) : [];
+  const isLoadingThreads = threadsQuery.isLoading;
+  const isLoadingDocuments = documentsQuery.isLoading;
   const isLoadingMessages = messagesQuery.isLoading && Boolean(activeThreadId);
   const displayMessageItems = !activeThreadId && pendingNewThreadMessage
     ? [
@@ -519,7 +521,12 @@ export function HoroApp() {
               {uploadMutation.isError ? <p className="text-sm text-red-500">{String(uploadMutation.error)}</p> : null}
               {deleteMutation.isError ? <p className="text-sm text-red-500">{String(deleteMutation.error)}</p> : null}
               <div className="space-y-2">
-                {documentItems.length ? (
+                {isLoadingDocuments ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-dashed border-[#c8d5e4] bg-white px-4 py-3 text-sm text-[#6b7a90]">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#1f8fff]" />
+                    Loading documents…
+                  </div>
+                ) : documentItems.length ? (
                   documentItems.map((document: DocumentRecord) => (
                     <Card key={document.id} className="bg-white">
                       <CardContent className="flex items-start justify-between gap-3 p-3.5">
@@ -587,7 +594,12 @@ export function HoroApp() {
                 </Button>
               </div>
               <div className="space-y-2">
-                {threadItems.length ? (
+                {isLoadingThreads ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-dashed border-[#c8d5e4] bg-white px-4 py-3 text-sm text-[#6b7a90]">
+                    <Loader2 className="h-4 w-4 animate-spin text-[#1f8fff]" />
+                    Loading threads…
+                  </div>
+                ) : threadItems.length ? (
                   threadItems.map((thread: ThreadRecord) => (
                     <div
                       key={thread.id}
