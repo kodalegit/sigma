@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { AssistantEventPanels, EmptyState, SigmaMark, SourcesPopover } from "@/components/chat-components";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MarkdownMessage } from "@/components/markdown-message";
 import {
   createThread,
@@ -523,8 +524,15 @@ export function HoroApp() {
                     <Card key={document.id} className="bg-white">
                       <CardContent className="flex items-start justify-between gap-3 p-3.5">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-[#213040]">{document.title}</p>
-                          <p className="mt-1 text-xs text-[#7b8ba1]">{document.mime_type || "document"}</p>
+                          <Tooltip>
+                            <TooltipTrigger className="w-full text-left">
+                              <p className="truncate text-sm font-medium text-[#213040]">{document.title}</p>
+                              <p className="mt-1 text-xs text-[#7b8ba1]">{document.mime_type || "document"}</p>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" align="start" className="max-w-sm wrap-break-word bg-white text-sm text-[#213040] shadow-md shadow-black/10">
+                              {document.title}
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge className={cn(document.status === "ready" ? "border-[#cbe6d6] bg-[#edf9f1] text-[#2b7a4b]" : "")}>{document.status}</Badge>
@@ -539,7 +547,7 @@ export function HoroApp() {
                                   <AlertDialogTitle>Delete document?</AlertDialogTitle>
                                 </div>
                                 <AlertDialogDescription>
-                                  This will permanently delete &quot;{document.title}&quot; and all its indexed chunks. This action cannot be undone.
+                                  This will permanently delete "{document.title}" and all its indexed chunks. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -590,14 +598,24 @@ export function HoroApp() {
                           : "border-[#dbe4ef] bg-white hover:border-[#c4d4e7] hover:bg-[#fbfcfe]",
                       )}
                     >
-                      <button
-                        type="button"
-                        onClick={() => handleSelectThread(thread.id)}
-                        className="min-w-0 flex-1 cursor-pointer text-left"
-                      >
-                        <p className="truncate text-sm font-medium text-[#213040]">{thread.title}</p>
-                        <p className="mt-1 text-xs text-[#7b8ba1]">{new Date(thread.updated_at).toLocaleString()}</p>
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          onClick={() => handleSelectThread(thread.id)}
+                          className="min-w-0 flex-1 cursor-pointer text-left"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-[#213040]">{thread.title}</p>
+                            <p className="mt-1 text-xs text-[#7b8ba1]">{new Date(thread.updated_at).toLocaleString()}</p>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          align="start"
+                          className="max-w-xs wrap-break-word bg-white text-sm text-[#213040] shadow-md shadow-black/10"
+                        >
+                          {thread.title}
+                        </TooltipContent>
+                      </Tooltip>
                       <AlertDialog
                         open={openDeleteThreadId === thread.id}
                         onOpenChange={(open) => {
