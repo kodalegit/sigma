@@ -87,6 +87,7 @@ This prototype keeps retrieval simple, explainable, and tenant-scoped.
 
 - Retrieval, documents, and chat threads are filtered by `user_id`.
 - Cross-tenant retrieval is disallowed by design; other tenants’ files are never searched.
+- Sensitive IDs are masked during ingestion (emails and Luhn-valid card numbers are replaced with `[REDACTED]`) before embedding and retrieval.
 
 ## Demo authentication
 
