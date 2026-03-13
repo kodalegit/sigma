@@ -9,6 +9,8 @@ engine = create_async_engine(
     settings.async_database_url,
     future=True,
     connect_args=settings.async_database_connect_args,
+    pool_pre_ping=True,
+    pool_recycle=1800,
 )
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
