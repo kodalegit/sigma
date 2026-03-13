@@ -684,6 +684,10 @@ export function HoroApp() {
 
                 {displayMessageItems.map((entry: ChatMessageRecord) => {
                   const isThinking = entry.id === streamingAssistantMessageId && isStreaming && !entry.content.trim();
+                  const shouldShowSources =
+                    !isThinking &&
+                    entry.citations.length > 0 &&
+                    (entry.metadata?.isComplete ?? entry.id !== streamingAssistantMessageId);
 
                   return (
                     <div
@@ -723,7 +727,7 @@ export function HoroApp() {
                                 citations={entry.citations}
                               />
                             )}
-                            {!isThinking && entry.metadata?.isComplete && entry.citations.length > 0 ? (
+                            {shouldShowSources ? (
                               <SourcesPopover citations={entry.citations} />
                             ) : null}
                           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,26 @@ export function LoginScreen({
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showColdStartNotice, setShowColdStartNotice] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticating) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowColdStartNotice(true);
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isAuthenticating]);
+
+  async function handleLogin(nextEmail: string, nextPassword: string) {
+    setShowColdStartNotice(false);
+    await onLogin(nextEmail, nextPassword);
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] px-4 py-10 text-[#152235]">
@@ -52,6 +72,20 @@ export function LoginScreen({
               <p className="mt-1 text-xs text-[#7b8ba1]">Use a test account below or enter the credentials manually.</p>
             </div>
 
+            {showColdStartNotice ? (
+              <div className="rounded-2xl border border-[#d7e7fb] bg-[#f4f8ff] px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[#1f5fa8]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#21406a]">Starting the backend…</p>
+                    <p className="mt-1 text-xs leading-5 text-[#5f7494]">
+                      Railway may be waking the container. Login can take a few seconds on the first request.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="space-y-3">
               {demoUsers.map((demoUser) => (
                 <button
@@ -60,10 +94,10 @@ export function LoginScreen({
                   onClick={() => {
                     setEmail(demoUser.email);
                     setPassword(demoUser.password);
-                    void onLogin(demoUser.email, demoUser.password);
+                    void handleLogin(demoUser.email, demoUser.password);
                   }}
                   disabled={isAuthenticating}
-                  className="w-full rounded-2xl border border-[#dbe4ef] bg-white px-4 py-3 text-left transition hover:border-[#bfdbfe] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="cursor-pointer w-full rounded-2xl border border-[#dbe4ef] bg-white px-4 py-3 text-left transition hover:border-[#bfdbfe] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -80,7 +114,7 @@ export function LoginScreen({
               className="space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                void onLogin(email, password);
+                void handleLogin(email, password);
               }}
             >
               <div className="space-y-1.5">
