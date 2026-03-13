@@ -52,6 +52,7 @@ export type ChatMessageRecord = {
   citations: Citation[];
   metadata?: {
     events?: ChatEventRecord[];
+    isComplete?: boolean;
   };
   created_at: string;
 };

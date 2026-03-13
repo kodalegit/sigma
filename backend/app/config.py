@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/sigma"
-    jwt_secret_key: str = "sigma-demo-secret-key"
+    jwt_secret_key: str = "sigma-demo-secret-key-SuPeRSeCrEtKeY"
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 60 * 12
     openai_api_key: str | None = None
