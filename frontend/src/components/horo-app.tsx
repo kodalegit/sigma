@@ -468,10 +468,10 @@ export function HoroApp() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f5f7fb] text-[#152235]">
-      <div className="grid h-screen grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_300px]">
-        <aside className="flex h-full flex-col overflow-hidden border-r border-[#e2e8f0] bg-[#f8fafc]">
-          <div className="flex flex-col px-5 py-6">
+    <div className="min-h-screen bg-[#f5f7fb] text-[#152235] xl:h-screen xl:overflow-hidden">
+      <div className="grid min-h-screen grid-cols-1 xl:h-screen xl:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="flex flex-col border-b border-[#e2e8f0] bg-[#f8fafc] xl:h-full xl:overflow-hidden xl:border-r xl:border-b-0">
+          <div className="flex flex-col px-4 py-5 sm:px-5 sm:py-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <SigmaMark />
@@ -496,8 +496,8 @@ export function HoroApp() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-6 overflow-y-auto px-5 pb-6">
-            <section className="space-y-3">
+          <div className="space-y-6 px-4 pb-5 sm:px-5 sm:pb-6 xl:flex-1 xl:overflow-y-auto">
+            <section className="space-y-3 xl:pt-0">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Documents</p>
                 <Badge>{documentItems.length}</Badge>
@@ -554,7 +554,7 @@ export function HoroApp() {
                                   <AlertDialogTitle>Delete document?</AlertDialogTitle>
                                 </div>
                                 <AlertDialogDescription>
-                                  This will permanently delete "{document.title}" and all its indexed chunks. This action cannot be undone.
+                                  This will permanently delete &quot;{document.title}&quot; and all its indexed chunks. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -679,21 +679,21 @@ export function HoroApp() {
           </div>
         </aside>
 
-        <main className="flex h-full flex-col overflow-hidden bg-[#f5f7fb]">
-          <div className="flex flex-1 flex-col overflow-hidden px-4 py-5 sm:px-6 xl:px-10">
-            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-hidden">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
+        <main className="flex min-h-0 flex-col bg-[#f5f7fb] xl:h-full xl:overflow-hidden">
+          <div className="flex flex-1 flex-col px-4 py-5 sm:px-6 xl:overflow-hidden xl:px-10">
+            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col xl:overflow-hidden">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8b9ab0]">Horo Workspace</p>
-                  <h1 className="mt-1 text-2xl font-semibold text-[#152235]">{activeThread?.title ?? "Select or create a thread"}</h1>
+                  <h1 className="mt-1 truncate text-xl font-semibold text-[#152235] sm:text-2xl">{activeThread?.title ?? "Select or create a thread"}</h1>
                 </div>
-                <div className="hidden items-center gap-2 sm:flex">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge>{user.tenant_name}</Badge>
                   <Badge className="hidden sm:inline-flex">Grounded answers only</Badge>
                 </div>
               </div>
 
-              <div ref={messagesContainerRef} className="chat-scroll flex-1 space-y-6 overflow-y-auto pr-3 pb-6">
+              <div ref={messagesContainerRef} className="chat-scroll flex-1 space-y-5 overflow-y-visible pb-5 xl:space-y-6 xl:overflow-y-auto xl:pr-3 xl:pb-6">
                 {isLoadingMessages ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-6 text-[#64748b]">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -727,7 +727,7 @@ export function HoroApp() {
                         entry.role === "assistant" ? "justify-start" : "justify-end",
                       )}
                     >
-                      <div className={cn("max-w-3xl", entry.role === "assistant" ? "w-full" : "max-w-xl")}>
+                      <div className={cn("w-full max-w-3xl", entry.role === "assistant" ? "w-full" : "max-w-full sm:max-w-xl")}>
                         <div className={cn("mb-2 flex items-center gap-2", entry.role === "user" ? "justify-end" : "justify-start")}>
                           {entry.role === "assistant" ? (
                             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-[#2a5ca8] to-[#1f3a5f] text-[10px] font-bold text-white shadow-sm">
@@ -763,7 +763,7 @@ export function HoroApp() {
                           </div>
                         ) : (
                           <Card className="border-[#d5e2f4] bg-[#f0f6ff] shadow-none">
-                            <CardContent className="px-5 py-4">
+                            <CardContent className="px-4 py-3.5 sm:px-5 sm:py-4">
                               <p className="whitespace-pre-wrap text-sm leading-7 text-[#2c3e50]">{entry.content}</p>
                             </CardContent>
                           </Card>
@@ -777,11 +777,11 @@ export function HoroApp() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <Card className="sticky bottom-0 mt-auto border-[#dbe4ef] shadow-[0_14px_40px_rgba(63,94,139,0.08)]">
+              <Card className="mt-auto border-[#dbe4ef] shadow-[0_14px_40px_rgba(63,94,139,0.08)] xl:sticky xl:bottom-0">
                 <CardContent className="p-2.5">
                   <form className="space-y-3" onSubmit={handleSubmit}>
                     {attachedFile ? (
-                      <div className="flex items-center justify-between rounded-xl border border-[#dbe4ef] bg-[#f8fbff] px-3 py-2 text-sm">
+                      <div className="flex flex-col gap-2 rounded-xl border border-[#dbe4ef] bg-[#f8fbff] px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-center gap-2 text-[#516074]">
                           {uploadMutation.isPending ? (
                             <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#1f8fff]" />
@@ -804,7 +804,7 @@ export function HoroApp() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 shrink-0 rounded-lg text-[#7b8ba1] hover:bg-red-50 hover:text-red-600"
+                          className="h-7 w-7 shrink-0 self-end rounded-lg text-[#7b8ba1] hover:bg-red-50 hover:text-red-600 sm:self-auto"
                           onClick={() => void handleRemoveAttachedFile()}
                           disabled={deleteMutation.isPending || uploadMutation.isPending}
                         >
@@ -821,7 +821,7 @@ export function HoroApp() {
                       onChange={(event) => setMessage(event.target.value)}
                       onKeyDown={handleComposerKeyDown}
                       placeholder="Ask Horo about your uploaded documents..."
-                      className="min-h-20 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 shadow-none focus:ring-0"
+                      className="min-h-20 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 shadow-none focus:ring-0 sm:min-h-24"
                       disabled={isStreaming}
                     />
                     <div className="flex items-center justify-between gap-4 border-t border-[#e8eef5] px-2 pt-3">
@@ -848,7 +848,7 @@ export function HoroApp() {
                         )}
                       </Button>
                     </div>
-                    <p className="px-2 text-xs text-[#8b9ab0]">Press Enter to send. Press Shift + Enter for a new line.</p>
+                    <p className="px-2 text-xs leading-5 text-[#8b9ab0]">Press Enter to send. Press Shift + Enter for a new line.</p>
                   </form>
                 </CardContent>
               </Card>
