@@ -22,6 +22,7 @@ type AuthContextValue = {
   user: AuthenticatedUser | null;
   demoUsers: DemoUserCredentials[];
   isReady: boolean;
+  isLoadingDemoUsers: boolean;
   isAuthenticating: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
@@ -37,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [demoUsers, setDemoUsers] = useState<DemoUserCredentials[]>([]);
   const [isReady, setIsReady] = useState(false);
+  const [isLoadingDemoUsers, setIsLoadingDemoUsers] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +54,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (nextError) {
         if (!cancelled) {
           setError(nextError instanceof Error ? nextError.message : "Failed to load demo users.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingDemoUsers(false);
         }
       }
     }
@@ -132,12 +138,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       demoUsers,
       isReady,
+      isLoadingDemoUsers,
       isAuthenticating,
       error,
       login,
       logout,
     }),
-    [demoUsers, error, isAuthenticating, isReady, login, logout, user],
+    [demoUsers, error, isAuthenticating, isLoadingDemoUsers, isReady, login, logout, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

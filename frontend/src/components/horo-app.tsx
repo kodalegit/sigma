@@ -54,7 +54,7 @@ export function HoroApp() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { demoUsers, error: authError, isAuthenticating, isReady, login, logout, user } = useAuth();
+  const { demoUsers, error: authError, isAuthenticating, isLoadingDemoUsers, isReady, login, logout, user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -462,6 +462,7 @@ export function HoroApp() {
         demoUsers={demoUsers}
         error={authError}
         isAuthenticating={isAuthenticating}
+        isLoadingDemoUsers={isLoadingDemoUsers}
         onLogin={login}
       />
     );

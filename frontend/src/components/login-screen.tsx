@@ -13,11 +13,13 @@ export function LoginScreen({
   demoUsers,
   error,
   isAuthenticating,
+  isLoadingDemoUsers,
   onLogin,
 }: {
   demoUsers: DemoUserCredentials[];
   error: string | null;
   isAuthenticating: boolean;
+  isLoadingDemoUsers: boolean;
   onLogin: (email: string, password: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
@@ -72,14 +74,16 @@ export function LoginScreen({
               <p className="mt-1 text-xs text-[#7b8ba1]">Use a test account below or enter the credentials manually.</p>
             </div>
 
-            {showColdStartNotice ? (
+            {isLoadingDemoUsers || showColdStartNotice ? (
               <div className="rounded-2xl border border-[#d7e7fb] bg-[#f4f8ff] px-4 py-3">
                 <div className="flex items-start gap-3">
                   <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[#1f5fa8]" />
                   <div>
                     <p className="text-sm font-medium text-[#21406a]">Starting the backend…</p>
                     <p className="mt-1 text-xs leading-5 text-[#5f7494]">
-                      Railway may be waking the container. Login can take a few seconds on the first request.
+                      {isLoadingDemoUsers
+                        ? "Loading demo accounts. Railway may be waking the container, so this can take a few seconds on the first request."
+                        : "Railway may be waking the container. Login can take a few seconds on the first request."}
                     </p>
                   </div>
                 </div>
@@ -96,7 +100,7 @@ export function LoginScreen({
                     setPassword(demoUser.password);
                     void handleLogin(demoUser.email, demoUser.password);
                   }}
-                  disabled={isAuthenticating}
+                  disabled={isAuthenticating || isLoadingDemoUsers}
                   className="cursor-pointer w-full rounded-2xl border border-[#dbe4ef] bg-white px-4 py-3 text-left transition hover:border-[#bfdbfe] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -139,7 +143,7 @@ export function LoginScreen({
                 />
               </div>
               {error ? <p className="text-sm text-red-500">{error}</p> : null}
-              <Button type="submit" className="w-full rounded-xl" disabled={isAuthenticating || !email.trim() || !password.trim()}>
+              <Button type="submit" className="w-full rounded-xl" disabled={isLoadingDemoUsers || isAuthenticating || !email.trim() || !password.trim()}>
                 {isAuthenticating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
               </Button>
             </form>
